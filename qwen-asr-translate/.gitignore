@@ -43,3 +43,18 @@ desktop.ini
 test_audio/
 test_video/
 .temp/
+
+# AI Assistant workspace files (OpenClaw/Cursor)
+.openclaw/
+memory/
+AGENTS.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
+BOOTSTRAP.md
+
+# UI Mockups (not part of actual application)
+ui_preview.html
+INSTALL_GUIDE.html

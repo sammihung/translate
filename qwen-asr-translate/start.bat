@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
-title QwenASR - GPU 模式
+title QwenASR - CPU 模式
 
 echo ============================================================
-echo QwenASR 即時語音辨識與翻譯 - GPU 模式
+echo QwenASR 即時語音辨識與翻譯
 echo ============================================================
 echo.
 
@@ -21,22 +21,9 @@ if not exist "venv\Scripts\activate.bat" (
 REM 激活虛擬環境
 call venv\Scripts\activate.bat
 
-REM 檢查 GPU 模型
-if not exist "GPUModel\qwen3-asr-1.7b.bin" (
-    echo.
-    echo [提示] 未找到 GPU 模型，是否現在下載？
-    echo 模型大小：~2.3 GB
-    set /p download="下載模型？(Y/N): "
-    
-    if /i "%download%"=="Y" (
-        echo 正在下載模型...
-        python scripts\download-models.bat
-    )
-)
-
-REM 啟動 GPU 版本
+REM 啟動應用程式
 echo.
-echo 啟動 GPU 模式...
-python src/app_gpu.py
+echo 啟動應用程式...
+python src/app.py
 
 pause
