@@ -1,0 +1,33 @@
+# Core dependencies
+openvino>=2023.3.0
+openvino-dev>=2023.3.0
+numpy>=1.24.0
+soundfile>=0.12.1
+librosa>=0.10.0
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# GUI
+customtkinter>=5.2.0
+Pillow>=10.0.0
+
+# VAD
+onnxruntime>=1.16.0
+silero-vad>=0.4.0
+
+# Translation
+transformers>=4.35.0
+sentencepiece>=0.1.99
+protobuf>=4.21.0
+
+# Video/Audio processing
+ffmpeg-python>=0.2.0
+pydub>=0.25.0
+
+# Utilities
+requests>=2.31.0
+tqdm>=4.66.0
+pyaudio>=0.2.13
+
+# Optional: GPU support (Vulkan)
+# chatllm-python>=0.1.0  # If using Vulkan backend
