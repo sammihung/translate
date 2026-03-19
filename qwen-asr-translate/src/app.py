@@ -1,228 +1,260 @@
 """
-QwenASR 即時語音辨識與翻譯工具
-主應用程式 - CustomTkinter GUI
+QwenASR Pro - 即時語音辨識與翻譯工具
+現代化 UI 設計：懸浮字幕條、側邊欄、聊天氣泡歷史記錄
+
+重構版本：UI 與核心邏輯分離
 """
 
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import threading
-import queue
 from pathlib import Path
 from typing import Optional
-import pyaudio
-import numpy as np
 from datetime import datetime
 
-from asr_engine import QwenASREngine, TranslationEngine, SubtitleGenerator
-from vad_processor import VADProcessor
+from audio_manager import AudioManager
+from ai_controller import AIController
+
+
+class SubtitleOverlay(ctk.CTkToplevel):
+    """
+    懸浮字幕條：無邊框、半透明、永遠置頂
+    加入 Speaker ID 顏色條與標籤
+    """
+    def __init__(self, parent):
+        super().__init__(parent)
+        
+        # 視窗設定：無邊框、置頂
+        self.overrideredirect(True)
+        self.attributes("-topmost", True)
+        self.attributes("-alpha", 0.9)
+        self.configure(fg_color="#000000")
+        
+        # 初始位置與大小
+        width, height = 750, 110
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        x = (screen_width - width) // 2
+        y = int(screen_height * 0.8)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+        # 主容器
+        self.container = ctk.CTkFrame(self, fg_color="#0f172a", corner_radius=12, 
+                                      border_width=1, border_color="#1e293b")
+        self.container.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # 左側說話者顏色條
+        self.color_bar = ctk.CTkFrame(self.container, width=6, fg_color="#3b82f6", 
+                                      corner_radius=3)
+        self.color_bar.pack(side="left", fill="y", padx=(15, 10), pady=15)
+
+        # 右側文字區塊
+        self.text_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        self.text_frame.pack(side="left", fill="both", expand=True, pady=12, padx=(0, 15))
+
+        # 標題列 (Speaker Badge & Close Button)
+        self.header_frame = ctk.CTkFrame(self.text_frame, fg_color="transparent")
+        self.header_frame.pack(fill="x", pady=(0, 4))
+
+        self.speaker_badge = ctk.CTkLabel(
+            self.header_frame, text="SPEAKER #1", font=("Arial", 10, "bold"),
+            fg_color="#1e3a8a", text_color="#60a5fa", corner_radius=4, padx=6, pady=2
+        )
+        self.speaker_badge.pack(side="left")
+
+        self.close_btn = ctk.CTkLabel(self.header_frame, text="×", font=("Arial", 16), 
+                                      text_color="#64748b", cursor="hand2")
+        self.close_btn.pack(side="right")
+        self.close_btn.bind("<Button-1>", lambda e: self.withdraw())
+
+        # 原文字幕
+        self.label_orig = ctk.CTkLabel(
+            self.text_frame, text="", font=("Arial", 13, "italic"),
+            text_color="#94a3b8", wraplength=650, justify="left"
+        )
+        self.label_orig.pack(anchor="w", pady=(0, 2))
+
+        # 譯文字幕
+        self.label_trans = ctk.CTkLabel(
+            self.text_frame, text="等待語音輸入...", font=("Microsoft YaHei", 22, "bold"),
+            text_color="#ffffff", wraplength=650, justify="left"
+        )
+        self.label_trans.pack(anchor="w")
+
+        # 綁定拖動功能到所有主要元件
+        for element in [self.container, self.text_frame, self.header_frame, 
+                        self.label_orig, self.label_trans]:
+            element.bind("<Button-1>", self.start_move)
+            element.bind("<B1-Motion>", self.do_move)
+
+    def start_move(self, event):
+        self._x = event.x_root - self.winfo_x()
+        self._y = event.y_root - self.winfo_y()
+
+    def do_move(self, event):
+        x = event.x_root - self._x
+        y = event.y_root - self._y
+        self.geometry(f"+{x}+{y}")
+
+    def update_text(self, orig, trans, speaker_id=1):
+        """根據 Speaker ID 動態改變顏色與文字"""
+        if speaker_id == 1:
+            color_main = "#3b82f6"  # 藍色
+            color_bg = "#1e3a8a"
+            speaker_name = "SPEAKER 1"
+        else:
+            color_main = "#10b981"  # 綠色
+            color_bg = "#064e3b"
+            speaker_name = "SPEAKER 2"
+
+        self.color_bar.configure(fg_color=color_main)
+        self.speaker_badge.configure(text=speaker_name, fg_color=color_bg, 
+                                     text_color=color_main)
+        self.label_orig.configure(text=orig)
+        self.label_trans.configure(text=trans)
 
 
 class RealtimeTab(ctk.CTkFrame):
-    """即時辨識分頁"""
+    """即時辨識分頁 - 現代化 UI"""
     
     def __init__(self, parent):
         super().__init__(parent)
         
-        self.asr_engine = None
-        self.translate_engine = None
-        self.vad_processor = None
-        self.speaker_diarization = None  # 說話者分離
+        # 核心組件（已抽離）
+        self.audio_mgr = AudioManager()
+        self.ai_ctrl = AIController()
+        
+        # 狀態
         self.is_recording = False
-        self.audio_stream = None
-        self.audio_queue = queue.Queue()
-        self.engines_ready = False  # 追蹤引擎是否已就緒
-        self.use_speaker_diarization = True  # 預設開啟，需要 HuggingFace token
+        self.record_thread: Optional[threading.Thread] = None
+        self.process_thread: Optional[threading.Thread] = None
+        self.subtitles = []  # 儲存字幕歷史
+        self._mock_toggle = 1  # 用於模擬
+        
+        # 生產者 - 消費者模式：音訊隊列
+        import queue
+        self.audio_queue = queue.Queue()  # 錄音員放音訊，翻譯員拎音訊
+        
+        # 初始化懸浮窗 (預設隱藏)
+        self.overlay = SubtitleOverlay(self)
+        self.overlay.withdraw()
         
         self.setup_ui()
     
     def setup_ui(self):
-        """設定介面"""
-        # 設備選擇
-        device_frame = ctk.CTkFrame(self)
-        device_frame.pack(fill="x", padx=10, pady=5)
+        """設定現代化介面"""
+        # 主容器 - 深色主題
+        self.configure(fg_color="#0b0f1a")
         
-        ctk.CTkLabel(device_frame, text="🎤 音訊輸入裝置:", font=("Arial", 12, "bold")).pack(side="left", padx=5)
+        # UI 佈局
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        # 1. 側邊欄
+        self.sidebar = ctk.CTkFrame(self, width=70, corner_radius=0, fg_color="#070a13")
+        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        
+        # 側邊欄按鈕
+        self.btn_home = ctk.CTkButton(self.sidebar, text="🏠", width=50, height=50,
+                                      fg_color="#1e293b", hover_color="#334155",
+                                      font=("Arial", 20))
+        self.btn_home.pack(pady=10)
+        
+        self.btn_settings = ctk.CTkButton(self.sidebar, text="⚙️", width=50, height=50,
+                                          fg_color="transparent", hover_color="#334155",
+                                          font=("Arial", 20))
+        self.btn_settings.pack(pady=10)
+        
+        # 2. 主內容
+        self.main_view = ctk.CTkFrame(self, fg_color="#0b0f1a", corner_radius=0)
+        self.main_view.grid(row=0, column=1, sticky="nsew")
+        self.main_view.grid_columnconfigure(0, weight=1)
+        self.main_view.grid_rowconfigure(1, weight=1)
+
+        self.setup_header()
+        self.setup_history_area()
+        self.setup_controls()
+        
+        # 啟動引擎載入（背景）
+        self.after(500, self.init_engines)
+    
+    def setup_header(self):
+        """設定頂部控制列"""
+        header = ctk.CTkFrame(self.main_view, fg_color="transparent", height=60)
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=10)
+        
+        # 左側：設備選擇
+        ctk.CTkLabel(header, text="🎤 音訊輸入裝置:", font=("Arial", 12, "bold"),
+                    text_color="#e2e8f0").pack(side="left")
         
         self.device_var = ctk.StringVar(value="選擇音訊裝置")
-        self.device_combo = ctk.CTkComboBox(device_frame, values=self.get_audio_devices(),
-                                           variable=self.device_var, width=400)
-        self.device_combo.pack(side="left", padx=5)
+        self.device_menu = ctk.CTkComboBox(header, values=self.audio_mgr.get_audio_devices(),
+                                          variable=self.device_var, width=250,
+                                          fg_color="#1e293b", border_color="#334155")
+        self.device_menu.pack(side="left", padx=10)
         
-        refresh_btn = ctk.CTkButton(device_frame, text="🔄", width=40,
-                                   command=self.refresh_devices)
+        refresh_btn = ctk.CTkButton(header, text="🔄", width=40, height=30,
+                                   command=self.refresh_devices,
+                                   fg_color="#334155", hover_color="#475569")
         refresh_btn.pack(side="left", padx=5)
         
-        help_btn = ctk.CTkButton(device_frame, text="❓ 系統音源設定", width=120,
-                                fg_color="#f57c00", command=self.show_system_audio_help)
-        help_btn.pack(side="left", padx=5)
-        
-        # 語言選擇
-        lang_frame = ctk.CTkFrame(self)
-        lang_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(lang_frame, text="🌐 辨識語言:").pack(side="left", padx=5)
-        
-        self.lang_var = ctk.StringVar(value="auto")
-        languages = ["auto", "zh", "en", "ja", "ko", "fr", "de", "es"]
-        self.lang_combo = ctk.CTkComboBox(lang_frame, values=languages,
-                                         variable=self.lang_var, width=150)
-        self.lang_combo.pack(side="left", padx=5)
-        
-        ctk.CTkLabel(lang_frame, text="翻譯目標:").pack(side="left", padx=5)
-        
-        self.target_lang_var = ctk.StringVar(value="en")
-        target_langs = ["en", "zh", "ja", "ko", "fr", "de", "es"]
-        self.target_lang_combo = ctk.CTkComboBox(lang_frame, values=target_langs,
-                                                 variable=self.target_lang_var, width=100)
-        self.target_lang_combo.pack(side="left", padx=5)
-        
-        # 控制按鈕
-        control_frame = ctk.CTkFrame(self)
-        control_frame.pack(pady=20)
-        
-        self.record_btn = ctk.CTkButton(control_frame, text="▶ 開始錄音",
-                                       command=self.toggle_recording,
-                                       height=40, font=("Arial", 16, "bold"))
-        self.record_btn.pack(pady=10)
-        
-        self.save_btn = ctk.CTkButton(control_frame, text="💾 儲存 SRT",
-                                     command=self.save_subtitle, state="disabled")
-        self.save_btn.pack(pady=5)
+        # 右側：懸浮窗開關
+        self.btn_overlay = ctk.CTkButton(
+            header, text="🖼️ 懸浮窗", width=120, height=30, 
+            fg_color="#3b82f6", hover_color="#2563eb",
+            command=self.toggle_overlay
+        )
+        self.btn_overlay.pack(side="right")
         
         # 狀態顯示
-        self.status_label = ctk.CTkLabel(self, text="⏹ 就緒", text_color="gray")
-        self.status_label.pack(pady=5)
+        self.status_label = ctk.CTkLabel(header, text="⏹ 就緒", 
+                                        text_color="#94a3b8", font=("Arial", 11))
+        self.status_label.pack(side="right", padx=20)
+    
+    def setup_history_area(self):
+        """設定歷史記錄區域（聊天氣泡風格）"""
+        self.scroll_frame = ctk.CTkScrollableFrame(self.main_view, fg_color="transparent",
+                                                   label_text="📝 即時對話記錄")
+        self.scroll_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
         
-        # 字幕顯示區（雙語）
-        subtitle_frame = ctk.CTkFrame(self)
-        subtitle_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        # 設定滾動區域顏色
+        self.scroll_frame._scrollbar.configure(fg_color="#1e293b", 
+                                              trough_color="#0f172a")
+    
+    def setup_controls(self):
+        """設定底部控制列"""
+        footer = ctk.CTkFrame(self.main_view, fg_color="#070a13", height=80)
+        footer.grid(row=2, column=0, sticky="ew")
         
-        ctk.CTkLabel(subtitle_frame, text="📝 即時字幕", font=("Arial", 14, "bold")).pack()
+        # 錄音按鈕
+        self.record_btn = ctk.CTkButton(
+            footer, text="▶ 開始錄音", height=45, corner_radius=22,
+            fg_color="#ef4444", hover_color="#dc2626",
+            font=("Arial", 16, "bold"),
+            command=self.toggle_recording
+        )
+        self.record_btn.pack(pady=15, padx=20)
         
-        # 原文區
-        ctk.CTkLabel(subtitle_frame, text="原文:").pack(anchor="w", padx=5)
-        self.original_text = ctk.CTkTextbox(subtitle_frame, height=100, font=("Arial", 14))
-        self.original_text.pack(fill="x", padx=5, pady=2)
-        
-        # 譯文區
-        ctk.CTkLabel(subtitle_frame, text="譯文:").pack(anchor="w", padx=5)
-        self.translated_text = ctk.CTkTextbox(subtitle_frame, height=100, font=("Arial", 14))
-        self.translated_text.pack(fill="x", padx=5, pady=2)
-        
-        # 小窗預覽（PiP）
-        self.pip_window = None
-        
-    def get_audio_devices(self) -> list:
-        """獲取音訊輸入裝置列表"""
-        p = pyaudio.PyAudio()
-        devices = []
-        
-        for i in range(p.get_device_count()):
-            try:
-                info = p.get_device_info_by_index(i)
-                if info['maxInputChannels'] > 0:
-                    device_name = info['name']
-                    device_idx = f"{i}: {device_name}"
-                    
-                    # 標記系統音源設備
-                    if any(keyword in device_name.lower() for keyword in 
-                           ['stereo mix', '立體聲混音', 'wave out', 'what u hear', 
-                            'virtual audio', 'vb-audio', 'voicemeeter']):
-                        device_idx = f"{i}: {device_name} 🎵 (系統音源)"
-                    
-                    devices.append(device_idx)
-            except:
-                pass
-        
-        p.terminate()
-        
-        # 確保有預設選項
-        if not devices:
-            devices = ["預設麥克風"]
-        
-        return devices
+        # 儲存按鈕
+        self.save_btn = ctk.CTkButton(
+            footer, text="💾 儲存 SRT", height=35, corner_radius=18,
+            fg_color="#334155", hover_color="#475569",
+            state="disabled", command=self.save_subtitle
+        )
+        self.save_btn.pack(pady=5)
     
     def refresh_devices(self):
         """重新整理裝置列表"""
-        devices = self.get_audio_devices()
-        self.device_combo.configure(values=devices)
+        devices = self.audio_mgr.get_audio_devices()
+        self.device_menu.configure(values=devices)
     
-    def show_system_audio_help(self):
-        """顯示系統音源設定說明"""
-        help_window = ctk.CTkToplevel(self)
-        help_window.title("🎵 系統音源設定指南")
-        help_window.geometry("700x500")
-        help_window.attributes('-topmost', True)
-        
-        text_box = ctk.CTkTextbox(help_window, font=("Microsoft YaHei", 12))
-        text_box.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        help_text = """
-🎵 如何設定系統音源 (立體聲混音)
-
-方法 1: 啟用 Windows 立體聲混音 (推薦)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. 右鍵點擊工作列喇叭圖示 → 選擇「聲音」
-2. 切換到「錄音」分頁
-3. 右鍵點擊空白處 → 勾選「顯示停用的裝置」
-4. 找到「立體聲混音」(Stereo Mix)
-5. 右鍵點擊 → 選擇「啟用」
-6. 再次右鍵 → 設為「預設裝置」
-7. 回到程式，點擊「🔄 重新整理」
-8. 選擇「立體聲混音」即可收聽電腦聲音
-
-方法 2: 安裝虛擬音訊線 (如果無立體聲混音)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-推薦軟體:
-• VB-Audio Virtual Cable (免費)
-  下載：https://vb-audio.com/Cable/
-  
-• VoiceMeeter (免費/進階)
-  下載：https://vb-audio.com/Voicemeeter/
-
-安裝步驟:
-1. 下載並安裝虛擬音訊線
-2. 重啟電腦
-3. Windows 音效設定 → 播放
-4. 將預設播放裝置設為虛擬音訊線
-5. 回到程式，選擇對應的輸入裝置
-
-方法 3: 使用音效卡的迴環功能
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-部分音效卡支援「What U Hear」或「Loopback」:
-1. 開啟音效卡控制面板
-2. 尋找錄音裝置設定
-3. 啟用「What U Hear」或「Loopback」
-4. 在程式中選擇該裝置
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 使用建議:
-• 立體聲混音品質最佳，延遲最低
-• 虛擬音訊線兼容性最好
-• 確保播放音量適中，避免爆音
-
-⚠️ 注意事項:
-• 收聽系統聲音時，自己的說話不會被錄入
-• 如需同時收聽麥克風和系統音，需使用混音器
-• 部分受版權保護的內容可能無法錄製
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ 設定完成後:
-1. 在上方裝置列表選擇「立體聲混音」
-2. 點擊「▶ 開始錄音」
-3. 播放電腦聲音（YouTube、音樂等）
-4. 即時看到辨識和翻譯結果！
-"""
-        
-        text_box.insert("1.0", help_text)
-        text_box.configure(state="disabled")
-        
-        close_btn = ctk.CTkButton(help_window, text="我知道了", 
-                                 command=help_window.destroy)
-        close_btn.pack(pady=10)
+    def toggle_overlay(self):
+        """切換懸浮窗顯示"""
+        if self.overlay.winfo_viewable():
+            self.overlay.withdraw()
+        else:
+            self.overlay.deiconify()
     
     def toggle_recording(self):
         """切換錄音狀態"""
@@ -232,249 +264,238 @@ class RealtimeTab(ctk.CTkFrame):
             self.start_recording()
     
     def start_recording(self):
-        """開始錄音"""
+        """開始錄音 - 啟動生產者 - 消費者模式"""
         # 初始化引擎（如果還沒載入）
-        if self.asr_engine is None or self.vad_processor is None:
-            self.init_engines()
-        
-        # 檢查引擎是否已就緒
-        if not self.engines_ready:
+        if not self.ai_ctrl.engines_ready:
             messagebox.showwarning("警告", "引擎尚未完全載入，請稍候...")
             return
         
-        # 檢查 VAD 是否已載入
-        if self.vad_processor is None:
-            messagebox.showerror("錯誤", "VAD 處理器未載入")
-            return
-        
         self.is_recording = True
-        self.record_btn.configure(text="■ 停止錄音", fg_color="#d32f2f")
-        self.status_label.configure(text="🔴 錄音中...", text_color="#d32f2f")
+        self.record_btn.configure(text="■ 停止錄音", fg_color="#b91c1c")
+        self.status_label.configure(text="🔴 錄音中...", text_color="#ef4444")
         
-        # 啟動錄音執行緒
-        self.record_thread = threading.Thread(target=self.record_audio, daemon=True)
+        # 清空舊 Queue
+        while not self.audio_queue.empty():
+            try:
+                self.audio_queue.get_nowait()
+            except:
+                pass
+        
+        # 1. 啟動「翻譯員」Thread (消費者 - 負責處理 Queue 入面嘅音檔)
+        self.process_thread = threading.Thread(target=self.processing_worker, daemon=True)
+        self.process_thread.start()
+        
+        # 2. 啟動「錄音員」Thread (生產者 - 專心錄音)
+        self.record_thread = threading.Thread(
+            target=self._recording_thread,
+            daemon=True
+        )
         self.record_thread.start()
     
-    def stop_recording(self):
-        """停止錄音"""
-        # 只係話俾背景 Thread 知要停啦
-        self.is_recording = False
+    def _recording_thread(self):
+        """錄音執行緒（生產者）- 專心錄音，將數據放入 Queue"""
+        device_index = self.audio_mgr.parse_device_index(self.device_var.get())
         
-        # 背景 Thread 會自己喺 finally 入面安全關閉音訊流
-        # 唔好喺度強行 close() 避免 Thread 衝突
-        
-        self.record_btn.configure(text="▶ 開始錄音", fg_color="#1976d2")
-        self.status_label.configure(text="⏹ 已停止", text_color="gray")
-        self.save_btn.configure(state="normal")
-    
-    def init_engines(self):
-        """初始化 ASR 和翻譯引擎"""
-        def load_in_background():
-            try:
-                # 載入 ASR 模型（使用 qwen-asr 套件）
-                try:
-                    print("正在初始化 ASR 引擎...")
-                    self.asr_engine = QwenASREngine(model_name="Qwen/Qwen3-ASR-0.6B", device="cpu")
-                    self.asr_engine.load_model()
-                except Exception as e:
-                    self.asr_engine = None
-                    print(f"[WARN] ASR 模型載入失敗：{e}")
-                    print("將使用基本模式（VAD + 翻譯，無語音辨識）")
-                
-                # 載入 VAD
-                self.vad_processor = VADProcessor()
-                
-                # 載入翻譯引擎
-                target_lang = self.target_lang_var.get()
-                self.translate_engine = TranslationEngine(source_lang="zh", target_lang=target_lang)
-                self.translate_engine.load_model()  # 立即載入，不要延遲
-                
-                # 載入說話者分離（可選，需要 HuggingFace token）
-                if self.use_speaker_diarization:
-                    try:
-                        from asr_engine import SpeakerDiarization
-                        self.speaker_diarization = SpeakerDiarization()
-                        self.speaker_diarization.load_pipeline()
-                    except Exception as e:
-                        self.speaker_diarization = None
-                        print(f"[WARN] Speaker Diarization 載入失敗：{e}")
-                        print("將使用基本模式（無說話者分離）")
-                
-                # 標記引擎已就緒
-                self.engines_ready = True
-                
-                if self.asr_engine and self.asr_engine.loaded:
-                    if self.speaker_diarization and self.speaker_diarization.loaded:
-                        self.after(0, lambda: self.status_label.configure(text="[OK] 引擎已就緒 (ASR + VAD + 翻譯 + 說話者分離)", text_color="green"))
-                    else:
-                        self.after(0, lambda: self.status_label.configure(text="[OK] 引擎已就緒 (ASR + VAD + 翻譯)", text_color="green"))
-                else:
-                    self.after(0, lambda: self.status_label.configure(text="[OK] 引擎已就緒 (VAD + 翻譯)", text_color="orange"))
-                
-                print("[OK] 引擎初始化完成")
-                
-            except Exception as e:
-                self.engines_ready = False
-                self.after(0, lambda: messagebox.showerror("錯誤", f"引擎初始化失敗:\n{str(e)}"))
-        
-        # 在主執行緒先顯示載入狀態
-        self.status_label.configure(text="[LOADING] 正在載入引擎...", text_color="orange")
-        
-        # 在背景執行緒載入模型，避免阻塞 GUI
-        import threading
-        thread = threading.Thread(target=load_in_background, daemon=True)
-        thread.start()
-        
-        # 等待引擎就緒（最多 30 秒）
-        self.wait_for_engines(timeout=30)
-    
-    def wait_for_engines(self, timeout: float = 30.0):
-        """等待引擎載入完成"""
-        import time
-        start_time = time.time()
-        
-        while not self.engines_ready and (time.time() - start_time) < timeout:
-            time.sleep(0.1)
-            self.status_label.configure(text=f"[LOADING] 正在載入引擎... ({int(time.time() - start_time)}s)")
-            self.update()  # 強制更新 UI
-        
-        if not self.engines_ready:
-            self.status_label.configure(text="[TIMEOUT] 引擎載入超時", text_color="orange")
-            print("[TIMEOUT] 引擎載入超時")
-    
-    def record_audio(self):
-        """錄音處理主迴圈"""
-        p = pyaudio.PyAudio()
+        def on_audio_data(audio_np):
+            """錄音回調：將音訊數據放入 Queue，交給背景處理 Thread"""
+            self.audio_queue.put(audio_np)
         
         try:
-            # 開啟音訊流
-            device_index = 0
-            device_text = self.device_var.get()
-            if ":" in device_text:
-                device_index = int(device_text.split(":")[0])
-            
-            # 嘗試開啟音訊流，處理可能的錯誤
-            try:
-                self.audio_stream = p.open(
-                    format=pyaudio.paFloat32,
-                    channels=1,
-                    rate=16000,
-                    input=True,
-                    input_device_index=device_index,
-                    frames_per_buffer=1024
-                )
-            except Exception as e:
-                # 如果 16000Hz 失敗，嘗試使用裝置預設取樣率
-                try:
-                    device_info = p.get_device_info_by_index(device_index)
-                    sample_rate = int(device_info.get('defaultSampleRate', 48000))
-                    print(f"使用裝置預設取樣率：{sample_rate}Hz")
-                    
-                    self.audio_stream = p.open(
-                        format=pyaudio.paFloat32,
-                        channels=1,
-                        rate=sample_rate,
-                        input=True,
-                        input_device_index=device_index,
-                        frames_per_buffer=1024
-                    )
-                except Exception as e2:
-                    # Stereo Mix 可能需要在 Windows 聲音設定中啟用
-                    self.audio_stream = p.open(
-                        format=pyaudio.paFloat32,
-                        channels=2,  # Stereo Mix 通常是立體聲
-                        rate=48000,
-                        input=True,
-                        input_device_index=device_index,
-                        frames_per_buffer=1024
-                    )
-            
-            audio_buffer = []
-            
-            # 當 is_recording 變成 False 時，迴圈會自然結束
-            while self.is_recording:
-                # 讀取音訊
-                data = self.audio_stream.read(1024, exception_on_overflow=False)
-                audio_np = np.frombuffer(data, dtype=np.float32)
-                audio_buffer.extend(audio_np.tolist())
-                
-                # 每 2 秒處理一次
-                if len(audio_buffer) >= 16000 * 2:
-                    self.process_audio_buffer(np.array(audio_buffer))
-                    audio_buffer = audio_buffer[-3200:]  # 保留最後 2.0 秒作為重疊緩衝，避免遺漏字詞
-                
+            self.audio_mgr.start_recording(device_index, callback=on_audio_data)
         except Exception as e:
-            print(f"錄音錯誤：{e}")
-        finally:
-            # 迴圈完結後，安全地喺度閂閉音訊流
-            if self.audio_stream is not None:
-                if self.audio_stream.is_active():
-                    self.audio_stream.stop_stream()
-                self.audio_stream.close()
-                self.audio_stream = None
-            p.terminate()
+            self.after(0, lambda: messagebox.showerror("錄音錯誤", str(e)))
+            self.after(0, lambda: self.stop_recording())
     
-    def process_audio_buffer(self, audio: np.ndarray):
-        """處理音訊緩衝區 - 支援說話者分離和連續辨識"""
-        # VAD 偵測語音段落
-        segments = self.vad_processor.detect_speech_segments(audio)
+    def processing_worker(self):
+        """背景翻譯員（消費者）- 不斷從 Queue 拎音檔出嚟處理"""
+        import queue
         
-        if segments:
-            for start, end in segments:
-                # 截取語音片段
-                start_idx = int(start * 16000)
-                end_idx = int(end * 16000)
-                segment = audio[start_idx:end_idx]
-                
-                # 說話者分離（如果已啟用）
-                speaker_label = None
-                if self.speaker_diarization and self.speaker_diarization.loaded:
+        while self.is_recording:
+            try:
+                # 🚨 隱患 1 修復：檢查有冇大塞車
+                queue_size = self.audio_queue.qsize()
+                if queue_size > 3:  # 如果塞咗超過 3 舊音訊 (大約 6 秒延遲)
+                    print(f"⚠️ 警告：系統處理速度過慢，丟棄舊音訊 (Queue Size: {queue_size})")
+                    # 清空最舊嘅音訊，追返上最新嘅進度
                     try:
-                        diarization_results = self.speaker_diarization.diarize(segment)
-                        if diarization_results and len(diarization_results) > 0:
-                            # 取第一個說話者標籤
-                            _, _, speaker_label = diarization_results[0]
-                    except Exception as e:
-                        print(f"[WARN] Diarization error: {e}")
+                        self.audio_queue.get_nowait()
+                        self.audio_queue.task_done()
+                    except queue.Empty:
+                        pass
+                    continue  # 丟棄後跳到下一次迴圈
                 
-                # ASR 辨識
-                try:
-                    if self.asr_engine is None:
-                        print("⚠️ ASR 引擎未載入，跳過語音辨識")
-                        continue
+                # 喺個箱度等 1 秒，有嘢就拎出嚟，無就繼續等
+                audio_data = self.audio_queue.get(timeout=1.0)
+                
+                # 拎到音訊，交俾 AI Controller 做 ASR 同翻譯
+                original, translated, speaker = self.ai_ctrl.process_audio(audio_data)
+                
+                if original.strip():
+                    # 預設 speaker_id = 1（如果無說話者分離）
+                    speaker_id = 1 if speaker is None else (1 if "SPEAKER_00" in str(speaker) else 2)
                     
-                    text = self.asr_engine.process_audio(segment)
-                    
-                    # 翻譯
-                    if text.strip() and self.translate_engine:
-                        translated = self.translate_engine.translate(text)
-                        
-                        # 加上說話者標籤
-                        if speaker_label:
-                            text = f"[{speaker_label}] {text}"
-                            translated = f"[{speaker_label}] {translated}"
-                        
-                        # 更新 UI
-                        self.update_subtitle(text, translated)
-                    
-                except Exception as e:
-                    print(f"處理錯誤：{e}")
+                    # 更新 UI（必須喺主執行緒）
+                    self.after(0, lambda o=original, t=translated, s=speaker_id: self.update_subtitle(o, t, s))
+                
+                # 話俾個箱知處理完啦
+                self.audio_queue.task_done()
+                
+            except queue.Empty:
+                # 個箱係空嘅，繼續等
+                continue
+            except Exception as e:
+                print(f"背景處理錯誤：{e}")
+                import traceback
+                traceback.print_exc()
     
-    def update_subtitle(self, original: str, translated: str):
-        """更新字幕顯示"""
-        # 在主執行緒更新
-        self.after(0, lambda: self._update_textboxes(original, translated))
+    def stop_recording(self):
+        """
+        停止錄音 - 確保處理完 Queue 入面所有音訊
+        🚨 隱患 3 修復：等待 Queue 清空先完成
+        """
+        self.is_recording = False
+        
+        # 停止錄音（關閉音訊流）
+        self.audio_mgr.stop_recording()
+        
+        self.status_label.configure(text="⏳ 正在處理最後的音訊...", text_color="orange")
+        
+        def finish_processing():
+            """背景等待 Queue 清空，唔好卡住 UI"""
+            try:
+                # 等待箱入面所有嘢處理完（包括最後一句話）
+                self.audio_queue.join()
+                print("✓ Queue 已清空，所有音訊處理完成")
+                
+                # 安全更新 UI（交返俾主線程）
+                self.after(0, lambda: self.record_btn.configure(text="▶ 開始錄音", fg_color="#ef4444"))
+                self.after(0, lambda: self.status_label.configure(text="⏹ 已停止", text_color="#94a3b8"))
+                self.after(0, lambda: self.save_btn.configure(state="normal"))
+                
+            except Exception as e:
+                print(f"等待 Queue 清空時出錯：{e}")
+                # 就算出錯都要更新 UI
+                self.after(0, lambda: self.record_btn.configure(text="▶ 開始錄音", fg_color="#ef4444"))
+                self.after(0, lambda: self.status_label.configure(text="⏹ 已停止 (錯誤)", text_color="#94a3b8"))
+                self.after(0, lambda: self.save_btn.configure(state="normal"))
+        
+        # 開條新 Thread 慢慢等佢完，唔好卡住個 UI
+        threading.Thread(target=finish_processing, daemon=True).start()
     
-    def _update_textboxes(self, original: str, translated: str):
-        """更新文字框"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
+    def init_engines(self):
+        """初始化 AI 引擎"""
+        def load_in_background():
+            def progress_callback(status: str):
+                self.after(0, lambda: self.status_label.configure(text=status))
+            
+            target_lang = "en"  # 預設
+            success = self.ai_ctrl.load_all_models(
+                target_lang=target_lang,
+                progress_callback=progress_callback
+            )
+            
+            if not success:
+                self.after(0, lambda: messagebox.showerror(
+                    "錯誤", "引擎初始化失敗，請檢查日誌"
+                ))
         
-        self.original_text.insert("end", f"[{timestamp}] {original}\n")
-        self.translated_text.insert("end", f"[{timestamp}] {translated}\n")
+        self.status_label.configure(text="[LOADING] 正在載入引擎...", text_color="#f59e0b")
         
-        # 自動捲動到底部
-        self.original_text.see("end")
-        self.translated_text.see("end")
+        thread = threading.Thread(target=load_in_background, daemon=True)
+        thread.start()
+    
+    def update_subtitle(self, original: str, translated: str, speaker_id: int = 1):
+        """
+        更新字幕顯示（確保 Thread-Safe）
+        
+        ⚠️ 注意：此函數可能被背景 Thread 呼叫，必須使用 self.after() 交返俾主 UI Thread
+        """
+        # 🚨 隱患 2 修復：確保所有 UI 更新都喺主執行緒
+        self.after(0, lambda: self._do_update_subtitle(original, translated, speaker_id))
+    
+    def _do_update_subtitle(self, original: str, translated: str, speaker_id: int = 1):
+        """實際執行 UI 更新（必須由主執行緒呼叫）"""
+        # 更新懸浮窗
+        self.overlay.update_text(original, translated, speaker_id)
+        
+        # 更新歷史記錄
+        self.add_history_bubble(original, translated, speaker_id)
+        
+        # 儲存字幕歷史
+        self.subtitles.append({
+            'timestamp': datetime.now().strftime("%H:%M:%S"),
+            'original': original,
+            'translated': translated,
+            'speaker': speaker_id
+        })
+    
+    def add_history_bubble(self, orig, trans, speaker_id):
+        """新增聊天對話氣泡到歷史記錄中"""
+        # 設定氣泡屬性
+        if speaker_id == 1:
+            align = "w"
+            bubble_color = "#1e293b"
+            border_color = "#334155"
+            text_color = "#60a5fa"
+            speaker_name = "SPEAKER #1"
+        else:
+            align = "e"
+            bubble_color = "#064e3b"
+            border_color = "#065f46"
+            text_color = "#34d399"
+            speaker_name = "SPEAKER #2"
+
+        # 對齊容器
+        container = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
+        container.pack(fill="x", pady=5, padx=5)
+
+        # 實際氣泡
+        bubble = ctk.CTkFrame(container, fg_color=bubble_color, border_width=1, 
+                             border_color=border_color, corner_radius=12)
+        bubble.pack(anchor=align, padx=10, pady=5)
+
+        # 標題列
+        header = ctk.CTkFrame(bubble, fg_color="transparent")
+        header.pack(fill="x", padx=12, pady=(8, 0))
+
+        time_str = datetime.now().strftime("%H:%M:%S")
+        
+        if speaker_id == 1:
+            ctk.CTkLabel(header, text=speaker_name, font=("Arial", 11, "bold"), 
+                        text_color=text_color).pack(side="left")
+            ctk.CTkLabel(header, text=time_str, font=("Courier", 10), 
+                        text_color="#64748b").pack(side="left", padx=(10, 0))
+        else:
+            ctk.CTkLabel(header, text=speaker_name, font=("Arial", 11, "bold"), 
+                        text_color=text_color).pack(side="right")
+            ctk.CTkLabel(header, text=time_str, font=("Courier", 10), 
+                        text_color="#64748b").pack(side="right", padx=(0, 10))
+
+        # 文字內容
+        ctk.CTkLabel(bubble, text=orig, font=("Arial", 13, "italic"), 
+                    text_color="#94a3b8", justify="left").pack(anchor=align, 
+                    padx=15, pady=(4, 0))
+        ctk.CTkLabel(bubble, text=trans, font=("Microsoft YaHei", 16, "bold"), 
+                    text_color="#f8fafc", justify="left").pack(anchor=align, 
+                    padx=15, pady=(2, 10))
+        
+        # 自動滾動到底部
+        self.scroll_frame._parent_canvas.yview_moveto(1.0)
+    
+    def mock_recognition(self):
+        """模擬辨識（用於測試）"""
+        if self._mock_toggle == 1:
+            orig = "The latest benchmarks show significant improvements in processing speed."
+            trans = "最新的基準測試顯示，在處理速度方面有顯著的提升。"
+            speaker_id = 1
+            self._mock_toggle = 2
+        else:
+            orig = "Indeed, especially when running on low-end hardware."
+            trans = "的確如此，特別是在低階硬體上執行時。"
+            speaker_id = 2
+            self._mock_toggle = 1
+        
+        self.update_subtitle(orig, trans, speaker_id)
     
     def save_subtitle(self):
         """儲存字幕檔"""
@@ -484,241 +505,41 @@ class RealtimeTab(ctk.CTkFrame):
         )
         
         if filepath:
-            # TODO: 匯出 SRT
+            # TODO: 實現 SRT 匯出邏輯
             messagebox.showinfo("完成", f"字幕已儲存至:\n{filepath}")
     
     def cleanup(self):
-        """清理資源（用於 App 關閉時）"""
-        # 停止錄音
-        if self.is_recording:
-            self.is_recording = False
-        
-        # 等待音訊流安全關閉
-        import time
-        time.sleep(0.3)
-        
-        # 關閉音訊流
-        if self.audio_stream:
-            try:
-                if self.audio_stream.is_active():
-                    self.audio_stream.stop_stream()
-                self.audio_stream.close()
-            except:
-                pass
-            self.audio_stream = None
+        """清理資源"""
+        self.audio_mgr.cleanup()
+        self.ai_ctrl.cleanup()
 
 
-class UploadTab(ctk.CTkFrame):
-    """上傳翻譯分頁"""
-    
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.selected_file = None
-        self.setup_ui()
-    
-    def setup_ui(self):
-        """設定介面"""
-        # 檔案選擇
-        file_frame = ctk.CTkFrame(self)
-        file_frame.pack(fill="x", padx=10, pady=10)
-        
-        ctk.CTkLabel(file_frame, text="📁 選擇檔案:", font=("Arial", 14, "bold")).pack(side="left", padx=5)
-        
-        self.file_label = ctk.CTkLabel(file_frame, text="未選擇檔案", text_color="gray")
-        self.file_label.pack(side="left", padx=10)
-        
-        browse_btn = ctk.CTkButton(file_frame, text="瀏覽...", command=self.browse_file)
-        browse_btn.pack(side="right", padx=5)
-        
-        # 格式說明
-        formats = "支援格式：MP3, WAV, FLAC, M4A, OGG, MP4, MKV, AVI, MOV, WMV"
-        ctk.CTkLabel(self, text=formats, text_color="gray").pack(pady=5)
-        
-        # 翻譯設定
-        trans_frame = ctk.CTkFrame(self)
-        trans_frame.pack(fill="x", padx=10, pady=10)
-        
-        ctk.CTkLabel(trans_frame, text="來源語言:").pack(side="left", padx=5)
-        self.source_lang_var = ctk.StringVar(value="auto")
-        ctk.CTkComboBox(trans_frame, values=["auto", "zh", "en", "ja"],
-                       variable=self.source_lang_var, width=120).pack(side="left", padx=5)
-        
-        ctk.CTkLabel(trans_frame, text="目標語言:").pack(side="left", padx=5)
-        self.target_lang_var = ctk.StringVar(value="en")
-        ctk.CTkComboBox(trans_frame, values=["en", "zh", "ja", "ko", "fr", "de", "es"],
-                       variable=self.target_lang_var, width=120).pack(side="left", padx=5)
-        
-        # 雙語字幕選項
-        self.dual_lang_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(trans_frame, text="雙語字幕", variable=self.dual_lang_var).pack(side="left", padx=20)
-        
-        # 進度條
-        self.progress_bar = ctk.CTkProgressBar(self)
-        self.progress_bar.pack(fill="x", padx=20, pady=10)
-        self.progress_bar.set(0)
-        
-        # 控制按鈕
-        control_frame = ctk.CTkFrame(self)
-        control_frame.pack(pady=20)
-        
-        self.convert_btn = ctk.CTkButton(control_frame, text="▶ 開始轉換",
-                                        command=self.start_conversion,
-                                        height=40, font=("Arial", 16, "bold"))
-        self.convert_btn.pack(pady=10)
-        
-        # 狀態顯示
-        self.status_label = ctk.CTkLabel(self, text="⏹ 就緒", text_color="gray")
-        self.status_label.pack(pady=5)
-    
-    def browse_file(self):
-        """選擇檔案"""
-        filepath = filedialog.askopenfilename(
-            title="選擇音訊/影片檔案",
-            filetypes=[
-                ("所有支援的檔案", "*.mp3 *.wav *.flac *.m4a *.ogg *.mp4 *.mkv *.avi *.mov *.wmv"),
-                ("音訊檔案", "*.mp3 *.wav *.flac *.m4a *.ogg"),
-                ("影片檔案", "*.mp4 *.mkv *.avi *.mov *.wmv"),
-                ("所有檔案", "*.*")
-            ]
-        )
-        
-        if filepath:
-            self.selected_file = filepath
-            self.file_label.configure(text=Path(filepath).name, text_color="white")
-    
-    def start_conversion(self):
-        """開始轉換"""
-        if not self.selected_file:
-            messagebox.showwarning("警告", "請先選擇檔案")
-            return
-        
-        # TODO: 實作轉換邏輯
-        self.status_label.configure(text="🔄 處理中...", text_color="#1976d2")
-        self.progress_bar.set(0.5)
-        
-        # 模擬處理
-        threading.Thread(target=self.process_file, daemon=True).start()
-    
-    def process_file(self):
-        """處理檔案"""
-        # TODO: 實作完整的轉換流程
-        import time
-        time.sleep(2)
-        
-        self.after(0, lambda: self.progress_bar.set(1.0))
-        self.after(0, lambda: self.status_label.configure(text="✅ 完成", text_color="green"))
-        self.after(0, lambda: messagebox.showinfo("完成", "轉換完成！"))
-
-
-class SettingsTab(ctk.CTkFrame):
-    """設定分頁"""
-    
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.setup_ui()
-    
-    def setup_ui(self):
-        """設定介面"""
-        # 外觀設定
-        appearance_frame = ctk.CTkFrame(self)
-        appearance_frame.pack(fill="x", padx=10, pady=10)
-        
-        ctk.CTkLabel(appearance_frame, text="外觀設定", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5, pady=(0, 10))
-        
-        ctk.CTkLabel(appearance_frame, text="顏色模式:").pack(anchor="w", padx=5, pady=5)
-        
-        self.appearance_var = ctk.StringVar(value="system")
-        appearance_combo = ctk.CTkComboBox(appearance_frame, 
-                                          values=["Dark", "Light", "System"],
-                                          variable=self.appearance_var,
-                                          command=self.change_appearance)
-        appearance_combo.pack(anchor="w", padx=5, pady=5)
-        
-        # 輸出設定
-        output_frame = ctk.CTkFrame(self)
-        output_frame.pack(fill="x", padx=10, pady=10)
-        
-        ctk.CTkLabel(output_frame, text="輸出設定", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5, pady=(0, 10))
-        
-        ctk.CTkLabel(output_frame, text="中文輸出:").pack(anchor="w", padx=5, pady=5)
-        
-        self.chinese_var = ctk.StringVar(value="traditional")
-        ctk.CTkRadioButton(output_frame, text="繁體中文", variable=self.chinese_var,
-                          value="traditional").pack(anchor="w", padx=5)
-        ctk.CTkRadioButton(output_frame, text="簡體中文", variable=self.chinese_var,
-                          value="simplified").pack(anchor="w", padx=5)
-        
-        # 模型設定
-        model_frame = ctk.CTkFrame(self)
-        model_frame.pack(fill="x", padx=10, pady=10)
-        
-        ctk.CTkLabel(model_frame, text="模型設定", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=5, pady=(0, 10))
-        
-        ctk.CTkLabel(model_frame, text="ASR 模型:").pack(anchor="w", padx=5, pady=5)
-        
-        self.model_var = ctk.StringVar(value="Qwen3-ASR-0.6B INT8")
-        ctk.CTkComboBox(model_frame, 
-                       values=["Qwen3-ASR-0.6B INT8", "Qwen3-ASR-1.7B INT8"],
-                       variable=self.model_var).pack(anchor="w", padx=5, pady=5)
-        
-        ctk.CTkLabel(model_frame, text="推理裝置:").pack(anchor="w", padx=5, pady=5)
-        
-        self.device_var = ctk.StringVar(value="CPU")
-        ctk.CTkRadioButton(model_frame, text="CPU (OpenVINO)", variable=self.device_var,
-                          value="CPU").pack(anchor="w", padx=5)
-        ctk.CTkRadioButton(model_frame, text="GPU (Vulkan)", variable=self.device_var,
-                          value="GPU").pack(anchor="w", padx=5)
-    
-    def change_appearance(self, mode: str):
-        """切換外觀模式"""
-        ctk.set_appearance_mode(mode.lower())
-
-
-class MainWindow(ctk.CTk):
-    """主視窗"""
+class App(ctk.CTk):
+    """主應用程式"""
     
     def __init__(self):
         super().__init__()
         
-        self.title("QwenASR 即時語音辨識與翻譯")
-        self.geometry("900x700")
-        
-        # 設定外觀
+        self.title("QwenASR Pro - YouTube Edition")
+        self.geometry("1000x700")
         ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
         
-        self.setup_ui()
-    
-    def setup_ui(self):
-        """設定主介面"""
-        # 標籤頁
-        self.tabview = ctk.CTkTabview(self)
-        self.tabview.pack(fill="both", expand=True)
-        
-        # 添加分頁
-        self.realtime_tab = RealtimeTab(self.tabview.add("即時轉換"))
+        # 創建即時辨識分頁
+        self.realtime_tab = RealtimeTab(self)
         self.realtime_tab.pack(fill="both", expand=True)
         
-        self.upload_tab = UploadTab(self.tabview.add("音檔轉字幕"))
-        self.upload_tab.pack(fill="both", expand=True)
-        
-        self.settings_tab = SettingsTab(self.tabview.add("設定"))
-        self.settings_tab.pack(fill="both", expand=True)
+        # 處理關閉事件
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
     
     def on_closing(self):
-        """關閉處理"""
-        # 如果錄緊音，先停止錄音並清理資源
-        if hasattr(self, 'realtime_tab'):
-            self.realtime_tab.cleanup()
-        
-        if messagebox.askokcancel("退出", "確定要退出嗎？"):
-            self.destroy()
+        """處理應用程式關閉"""
+        self.realtime_tab.cleanup()
+        self.destroy()
 
 
 def main():
-    """主程式進入點"""
-    app = MainWindow()
-    app.protocol("WM_DELETE_WINDOW", app.on_closing)
+    """主函數"""
+    app = App()
     app.mainloop()
 
 
