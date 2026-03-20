@@ -109,51 +109,36 @@ class SpeakerDiarization:
         self.max_speakers = max_speakers
 
 
+# src/asr_engine.py
+
 class QwenASREngine:
-    def __init__(self, model_name: str = "Qwen/Qwen3-ASR-0.6B", device: str = "cpu"):
-        """
-        初始化 ASR 引擎
-        
-        Args:
-            model_name: HuggingFace 模型名稱
-            device: 推理裝置 ("cpu" 或 "cuda")
-        """
+    def __init__(self, model_name: str = "Qwen/Qwen3-ASR-1.7B", device: str = "cpu"):
         self.model_name = model_name
-        self.device = device
+        self.device = device # 呢度會接收來自 Controller 嘅 "cuda" 或 "cpu"
         self.model = None
         self.loaded = False
         
     def load_model(self):
-        """載入 ASR 模型"""
-        if self.loaded:
-            return
-            
-        print(f"Loading ASR model: {self.model_name}...")
+        if self.loaded: return
+        print(f"🚀 Loading ASR: {self.model_name} on {self.device}...")
         
         try:
+            import torch
             from qwen_asr import Qwen3ASRModel
             
-            # 確定 dtype
-            if self.device == "cuda":
-                dtype = torch.float16
-            else:
-                dtype = torch.float32
+            # 💡 關鍵：GPU 必須用 float16，否則 1.7B 會爆 VRAM
+            dtype = torch.float16 if self.device == "cuda" else torch.float32
             
-            # 載入模型
             self.model = Qwen3ASRModel.from_pretrained(
                 self.model_name,
                 dtype=dtype,
-                device_map=self.device,
-                max_new_tokens=256,
+                device_map=self.device, # 自動掛載到指定設備
+                trust_remote_code=True
             )
-            
             self.loaded = True
-            print(f"[OK] ASR model loaded ({self.device})")
-            
+            print(f"[OK] ASR loaded on {self.device}")
         except Exception as e:
-            print(f"[WARN] ASR model load failed: {e}")
-            self.model = None
-            self.loaded = False
+            print(f"[ERROR] ASR Load Failed: {e}")
     
     def process_audio(self, audio: np.ndarray, sample_rate: int = 16000, language: str = None) -> str:
         """

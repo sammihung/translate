@@ -20,31 +20,25 @@ class AIController:
         self.engines_ready = False
         self.use_speaker_diarization = True
     
-    def load_all_models(self, target_lang: str = "en", 
+    def load_all_models(self, target_lang: str = "zh", 
+                        asr_model: str = "Qwen/Qwen3-ASR-0.6B", # 預設值
+                        device: str = "cpu",                   # 預設值
                         progress_callback: Optional[callable] = None) -> bool:
-        """
-        載入所有 AI 模型
-        
-        Args:
-            target_lang: 翻譯目標語言
-            progress_callback: 進度回調函數 (status_text: str)
-            
-        Returns:
-            bool: 是否成功載入
-        """
         try:
             # 載入 ASR 模型
             if progress_callback:
-                progress_callback("正在初始化 ASR 引擎...")
+                progress_callback(f"正在載入 {asr_model} ({device})...")
             
             try:
                 from asr_engine import QwenASREngine
-                self.asr_engine = QwenASREngine(model_name="Qwen/Qwen3-ASR-0.6B", device="cpu")
+                # 💡 使用傳入嘅 asr_model 同 device
+                self.asr_engine = QwenASREngine(model_name=asr_model, device=device)
                 self.asr_engine.load_model()
-                print("✓ ASR 引擎載入完成")
             except Exception as e:
-                print(f"[WARN] ASR 模型載入失敗：{e}")
-                self.asr_engine = None
+                print(f"[ERROR] ASR 模型載入失敗：{e}")
+                
+            # ... 後面 VAD 同 翻譯引擎 保持不變 ...
+
             
             # 載入 VAD
             if progress_callback:

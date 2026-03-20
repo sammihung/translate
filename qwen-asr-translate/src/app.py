@@ -75,6 +75,8 @@ class App(ctk.CTk):
         # 更新設備列表
         devices = self.controller.get_audio_devices()
         self.ui.set_device_list(devices)
+        self.ui.asr_model_var.set("Qwen/Qwen3-ASR-1.7B" if self.controller.has_gpu else "Qwen/Qwen3-ASR-0.6B")
+        self.ui.compute_device_var.set("CUDA" if self.controller.has_gpu else "CPU")
         self.ui.use_full_model_var.set(self.controller.use_full_model)
         
         # 如果冇 GPU，我哋仲可以將個 Checkbox 變灰或者加個警告字眼

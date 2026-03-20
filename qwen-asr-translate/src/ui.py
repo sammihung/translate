@@ -231,7 +231,8 @@ class MainUI(ctk.CTkFrame):
         )
         self.full_model_checkbox.pack(anchor="w", pady=(0, 20))
         
-        save_btn = ctk.CTkButton(frame, text="💾 儲存設定", height=45, fg_color=self.colors["primary"])
+        save_btn = ctk.CTkButton(frame, text="💾 儲存設定", height=45, fg_color=self.colors["primary"], 
+                                 command=self._on_save_settings)
         save_btn.pack(anchor="e", pady=20)
         
         return frame
@@ -402,3 +403,23 @@ class MainUI(ctk.CTkFrame):
             self.chat_scroll._parent_canvas.yview_moveto(1.0)
             
         self.after(0, _update)
+    
+    def _on_save_settings(self):
+        """當使用者點擊『儲存設定』時觸發"""
+        # 1. 喺 UI 攞返晒所有變數嘅最新數值
+        settings = {
+            "model": self.asr_model_var.get(),
+            "device": self.compute_device_var.get(),
+            "vad_duration": self.vad_duration_var.get(),
+            "use_full_model": self.use_full_model_var.get()
+        }
+
+        # 2. 透過 Controller 將設定傳落去 AI 引擎
+        if hasattr(self.controller, 'set_settings'):
+            # 喺 controller.py 入面我哋寫咗對應嘅處理邏輯
+            self.controller.set_settings(settings)
+            
+            # 3. 彈個通知話俾用家聽搞掂咗
+            messagebox.showinfo("Success", "Settings updated! The AI engines will reload with new parameters.")
+        else:
+            print("[ERROR] Controller 冇 set_settings 呢個方法，請檢查 controller.py")

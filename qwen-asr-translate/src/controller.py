@@ -60,11 +60,20 @@ class AppController:
         self.src_lang = "auto"
         self.tgt_lang = "zh"
     
+    # src/controller.py
+
     def initialize_engines(self, progress_callback: Optional[Callable] = None) -> bool:
         """初始化 AI 引擎"""
+        # 💡 根據偵測結果決定要用邊個 ASR 模型
+        # 如果有 GPU 就用 1.7B，冇就用 0.6B (或者你鍾意全線 1.7B 都得)
+        asr_model = "Qwen/Qwen3-ASR-1.7B" if self.has_gpu else "Qwen/Qwen3-ASR-0.6B"
+        device = "cuda" if self.has_gpu else "cpu"
+        
         try:
             return self.ai_ctrl.load_all_models(
                 target_lang=self.target_lang,
+                asr_model=asr_model, # 傳入模型名
+                device=device,       # 傳入設備
                 progress_callback=progress_callback
             )
         except Exception as e:
@@ -93,16 +102,28 @@ class AppController:
         if "bilingual" in settings:
             self.bilingual_mode = settings["bilingual"]
             
-        # 👇 新增：接收 UI 傳來嘅選項，並即時改寫 Ollama 請求嘅模型名稱
-        if "use_full_model" in settings:
-            # 用家嘅手動選擇會覆蓋自動偵測嘅結果
-            self.use_full_model = settings["use_full_model"]
-            self.tgt_model_name = "translategemma:4b-it-fp16" if self.use_full_model else "translategemma:4b-it-q4_K_M"
+        # 1. 處理 ASR 模型與設備
+        target_asr = settings.get("model", "Qwen/Qwen3-ASR-0.6B")
+        target_device = settings.get("device", "cpu").lower() # 轉細階配合 torch
+        if target_device == "cuda" and not self.has_gpu:
+            target_device = "cpu" # 防止冇卡強行開 CUDA
             
-            # 即時通知翻譯引擎換模型
-            if hasattr(self.ai_ctrl, 'translate_engine') and self.ai_ctrl.translate_engine:
+        # 2. 如果模型或設備變咗，就需要重新載入
+        # 注意：載入 1.7B 較慢，建議用 Thread 行，呢度先示範核心邏輯
+        print(f"🔄 正在套用新設定: {target_asr} on {target_device}")
+        
+        # 更新翻譯模型 (Ollama)
+        if "use_full_model" in settings:
+            self.use_full_model = settings["use_full_model"]
+            self.tgt_model_name = "translategemma:4b-it" if self.use_full_model else "translategemma:4b-it-q4_K_M"
+            if self.ai_ctrl.translate_engine:
                 self.ai_ctrl.translate_engine.model_name = self.tgt_model_name
-                print(f"🔄 [Manual Override] Switched to: {self.tgt_model_name}")
+
+        # 重新初始化 ASR (建議透過回調通知 UI 顯示進度)
+        self.ai_ctrl.load_all_models(
+            asr_model=target_asr,
+            device=target_device
+        )
                 
     def start_recording(self, device_index: Optional[int] = None) -> bool:
         """開始錄音"""
