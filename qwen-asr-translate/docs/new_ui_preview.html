@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QwenASR Pro - Web UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #0b0f19; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .glass { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.05); }
+        .glass-panel { background: rgba(30, 41, 59, 0.5); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
+        
+        /* 隱藏捲軸但保持可滾動 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* 音量波形動畫 */
+        .waveform-bar { transition: height 0.1s ease; }
+        .recording .waveform-bar:nth-child(odd) { animation: bounce 0.8s infinite alternate; }
+        .recording .waveform-bar:nth-child(even) { animation: bounce 0.5s infinite alternate-reverse; }
+        
+        @keyframes bounce {
+            0% { height: 4px; }
+            100% { height: 24px; }
+        }
+
+        /* 拖曳上傳區動畫 */
+        .drag-over { border-color: #3b82f6 !important; background-color: rgba(59, 130, 246, 0.1) !important; }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden antialiased selection:bg-blue-500/30">
+
+    <!-- 左側邊欄 (Sidebar) -->
+    <aside class="w-20 hover:w-64 transition-all duration-300 glass z-50 flex flex-col items-center py-6 border-r border-slate-800 group absolute md:relative h-full overflow-hidden">
+        <div class="text-blue-500 text-3xl mb-10 flex items-center w-full px-6 gap-4">
+            <i class="fas fa-wave-square min-w-[30px] text-center"></i>
+            <span class="text-xl font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">QwenASR</span>
+        </div>
+        
+        <nav class="flex flex-col gap-2 w-full px-3">
+            <button onclick="switchTab('realtime')" id="nav-realtime" class="nav-btn active flex items-center gap-4 text-blue-400 bg-blue-500/10 p-4 rounded-xl transition-colors w-full">
+                <i class="fas fa-bolt min-w-[24px] text-center text-lg"></i>
+                <span class="opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-medium">即時翻譯</span>
+            </button>
+            <button onclick="switchTab('batch')" id="nav-batch" class="nav-btn flex items-center gap-4 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 p-4 rounded-xl transition-colors w-full">
+                <i class="fas fa-file-audio min-w-[24px] text-center text-lg"></i>
+                <span class="opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-medium">批量上傳</span>
+            </button>
+            <button onclick="switchTab('settings')" id="nav-settings" class="nav-btn flex items-center gap-4 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 p-4 rounded-xl transition-colors w-full">
+                <i class="fas fa-sliders-h min-w-[24px] text-center text-lg"></i>
+                <span class="opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-medium">系統設定</span>
+            </button>
+        </nav>
+        
+        <div class="mt-auto w-full px-3">
+            <div class="flex items-center gap-4 text-slate-500 p-4 w-full">
+                <div class="w-2 h-2 rounded-full bg-green-500 min-w-[8px]"></div>
+                <span class="opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap text-xs font-mono">系統運作正常</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 主內容區 (Main Content) -->
+    <main class="flex-1 relative bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-opacity-10">
+        
+        <!-- ========================================== -->
+        <!-- TAB 1: 即時翻譯 (Real-time Translate)      -->
+        <!-- ========================================== -->
+        <section id="tab-realtime" class="h-full flex flex-col absolute inset-0 transition-opacity duration-300">
+            <!-- 頂部控制列 -->
+            <header class="h-16 glass-panel flex items-center justify-between px-8 z-10 border-b border-slate-800">
+                <div class="flex items-center gap-4">
+                    <span class="text-sm text-slate-400">音訊輸入:</span>
+                    <select class="bg-slate-800/80 text-sm border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200 outline-none focus:border-blue-500">
+                        <option>🎵 Stereo Mix (系統音源)</option>
+                        <option>🎤 內建麥克風</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-3 bg-slate-800/50 rounded-lg p-1 border border-slate-700">
+                    <select class="bg-transparent text-sm border-none text-slate-300 outline-none pl-2">
+                        <option>日文 (JA)</option>
+                        <option>英文 (EN)</option>
+                    </select>
+                    <i class="fas fa-arrow-right text-slate-500 text-xs"></i>
+                    <select class="bg-transparent text-sm border-none text-slate-300 outline-none pr-2">
+                        <option>繁體中文 (ZH-HK)</option>
+                        <option>英文 (EN)</option>
+                    </select>
+                </div>
+            </header>
+
+            <!-- 歷史字幕區 -->
+            <div id="chat-container" class="flex-1 overflow-y-auto p-8 space-y-6 no-scrollbar pb-32">
+                <!-- Speaker 1 -->
+                <div class="flex gap-4 max-w-4xl">
+                    <div class="w-10 h-10 rounded-full bg-blue-500/20 flex flex-shrink-0 items-center justify-center text-blue-400 border border-blue-500/30">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="bg-slate-800/60 p-4 rounded-2xl rounded-tl-none border border-slate-700/50 shadow-sm flex-1">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Speaker #1</span>
+                            <span class="text-[10px] text-slate-500 font-mono">14:20:05</span>
+                        </div>
+                        <p class="text-slate-400 text-sm mb-1 italic">"こんにちは、本日の会議を始めましょう。"</p>
+                        <p class="text-white text-lg font-medium">「你好，讓我們開始今天的會議吧。」</p>
+                    </div>
+                </div>
+
+                <!-- Speaker 2 -->
+                <div class="flex gap-4 max-w-4xl ml-auto flex-row-reverse">
+                    <div class="w-10 h-10 rounded-full bg-emerald-500/20 flex flex-shrink-0 items-center justify-center text-emerald-400 border border-emerald-500/30">
+                        <i class="fas fa-user-tie"></i>
+                    </div>
+                    <div class="bg-slate-800/60 p-4 rounded-2xl rounded-tr-none border border-slate-700/50 shadow-sm flex-1 text-right">
+                        <div class="flex justify-between items-center mb-2 flex-row-reverse">
+                            <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Speaker #2</span>
+                            <span class="text-[10px] text-slate-500 font-mono">14:20:12</span>
+                        </div>
+                        <p class="text-slate-400 text-sm mb-1 italic">"よろしくお願いします。まずは進捗から報告します。"</p>
+                        <p class="text-white text-lg font-medium">「請多多指教。首先由我來報告進度。」</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部錄音控制列 -->
+            <div class="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0b0f19] via-[#0b0f19] to-transparent">
+                <div class="glass-panel max-w-5xl mx-auto h-20 rounded-2xl flex items-center px-6 gap-6 shadow-2xl border border-slate-700">
+                    <!-- 錄音按鈕 -->
+                    <button id="record-btn" onclick="toggleRecording()" class="w-12 h-12 rounded-full bg-red-500 hover:bg-red-600 text-white transition-all flex items-center justify-center shadow-lg shadow-red-500/20 flex-shrink-0">
+                        <i class="fas fa-microphone text-lg" id="record-icon"></i>
+                    </button>
+                    
+                    <!-- 波形顯示 -->
+                    <div id="visualizer" class="flex-1 h-10 flex items-center gap-1.5 px-4 overflow-hidden border-l border-r border-slate-700/50">
+                        <!-- 預設靜態波形 -->
+                        <div class="waveform-bar bg-blue-500 w-1.5 h-1 rounded-full opacity-50"></div>
+                        <div class="waveform-bar bg-blue-500 w-1.5 h-1 rounded-full opacity-50"></div>
+                        <div class="waveform-bar bg-blue-500 w-1.5 h-1 rounded-full opacity-50"></div>
+                        <div class="waveform-bar bg-blue-500 w-1.5 h-1 rounded-full opacity-50"></div>
+                        <div class="waveform-bar bg-blue-500 w-1.5 h-1 rounded-full opacity-50"></div>
+                        <div class="waveform-bar bg-blue-500 w-1.5 h-1 rounded-full opacity-50"></div>
+                        <div class="waveform-bar bg-blue-500 w-1.5 h-1 rounded-full opacity-50"></div>
+                        <div class="waveform-bar bg-blue-500 w-1.5 h-1 rounded-full opacity-50"></div>
+                        <span id="record-status" class="text-slate-500 text-xs font-mono ml-4">READY TO RECORD</span>
+                    </div>
+
+                    <!-- 動作按鈕 -->
+                    <div class="flex gap-2 flex-shrink-0">
+                        <button class="bg-slate-700 hover:bg-slate-600 text-xs px-4 py-2 rounded-lg text-white transition-colors">
+                            <i class="fas fa-copy mr-2"></i>複製
+                        </button>
+                        <button class="bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg text-white transition-colors shadow-lg shadow-blue-500/20">
+                            <i class="fas fa-download mr-2"></i>匯出 SRT
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: 批量上傳 (Batch Process)             -->
+        <!-- ========================================== -->
+        <section id="tab-batch" class="h-full flex flex-col absolute inset-0 opacity-0 pointer-events-none transition-opacity duration-300 hidden">
+            <header class="h-16 glass-panel flex items-center px-8 z-10 border-b border-slate-800">
+                <h2 class="text-lg font-bold text-slate-200"><i class="fas fa-file-audio mr-3 text-blue-500"></i>批量音檔轉字幕</h2>
+            </header>
+
+            <div class="flex-1 overflow-y-auto p-8 max-w-4xl mx-auto w-full">
+                <!-- 拖曳上傳區 -->
+                <div id="dropzone" class="w-full h-64 border-2 border-dashed border-slate-600 rounded-2xl bg-slate-800/30 flex flex-col items-center justify-center text-slate-400 hover:border-blue-500 hover:bg-slate-800/50 transition-all cursor-pointer mb-8">
+                    <i class="fas fa-cloud-upload-alt text-5xl mb-4 text-slate-500"></i>
+                    <p class="text-lg font-medium text-slate-300">拖曳音檔或影片到此處</p>
+                    <p class="text-sm mt-2">支援格式: MP3, WAV, M4A, MP4, MKV (上限 500MB)</p>
+                    <button class="mt-6 bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-full text-sm font-medium transition-colors">
+                        瀏覽檔案
+                    </button>
+                </div>
+
+                <!-- 轉換設定 -->
+                <div class="glass-panel rounded-2xl p-6 mb-8 border border-slate-700">
+                    <h3 class="text-sm font-bold text-slate-300 mb-4 border-b border-slate-700 pb-2">轉換設定</h3>
+                    <div class="grid grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-xs text-slate-500 mb-2">來源語言</label>
+                            <select class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-200 outline-none">
+                                <option>自動偵測 (Auto)</option>
+                                <option>日文 (Japanese)</option>
+                                <option>英文 (English)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-500 mb-2">目標語言</label>
+                            <select class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-200 outline-none">
+                                <option>繁體中文 (ZH-HK)</option>
+                                <option>英文 (English)</option>
+                            </select>
+                        </div>
+                        <div class="col-span-2 flex items-center gap-6 mt-2">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" checked class="w-4 h-4 rounded border-slate-600 text-blue-500 focus:ring-blue-500 bg-slate-800">
+                                <span class="text-sm text-slate-300">產生雙語 SRT 字幕檔</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" checked class="w-4 h-4 rounded border-slate-600 text-blue-500 focus:ring-blue-500 bg-slate-800">
+                                <span class="text-sm text-slate-300">啟用說話者分離 (Speaker Diarization)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 處理進度區 (預設隱藏) -->
+                <div id="progress-area" class="glass-panel rounded-2xl p-6 border border-slate-700 hidden">
+                    <div class="flex justify-between text-sm mb-2">
+                        <span class="text-blue-400 font-medium"><i class="fas fa-spinner fa-spin mr-2"></i>正在處理: meeting_record_01.mp4</span>
+                        <span class="text-slate-400" id="progress-text">45%</span>
+                    </div>
+                    <div class="w-full bg-slate-800 rounded-full h-2.5">
+                        <div id="progress-bar" class="bg-blue-500 h-2.5 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- 底部按鈕 -->
+                <div class="flex justify-end mt-6">
+                    <button onclick="simulateUpload()" class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20 flex items-center">
+                        <i class="fas fa-play mr-2"></i>開始批次轉換
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: 系統設定 (Settings)                  -->
+        <!-- ========================================== -->
+        <section id="tab-settings" class="h-full flex flex-col absolute inset-0 opacity-0 pointer-events-none transition-opacity duration-300 hidden">
+            <header class="h-16 glass-panel flex items-center px-8 z-10 border-b border-slate-800">
+                <h2 class="text-lg font-bold text-slate-200"><i class="fas fa-sliders-h mr-3 text-blue-500"></i>系統偏好設定</h2>
+            </header>
+
+            <div class="flex-1 overflow-y-auto p-8 max-w-3xl mx-auto w-full pb-20">
+                <!-- AI 模型設定 -->
+                <div class="mb-8">
+                    <h3 class="text-sm font-bold text-blue-400 mb-4 uppercase tracking-wider">🧠 AI 引擎設定</h3>
+                    <div class="glass-panel rounded-2xl p-6 border border-slate-700 space-y-6">
+                        <div>
+                            <label class="block text-sm text-slate-300 mb-2">ASR 語音辨識模型</label>
+                            <select class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-200 outline-none focus:border-blue-500">
+                                <option>Qwen3-ASR-0.6B (速度最快，適合 CPU)</option>
+                                <option>Qwen3-ASR-1.7B (準確度高，需要較大 RAM)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-slate-300 mb-2">硬體加速 (Compute Device)</label>
+                            <select class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-200 outline-none">
+                                <option>自動偵測 (Auto)</option>
+                                <option>CPU 處理器 (OpenVINO)</option>
+                                <option>GPU 顯示卡 (CUDA/Vulkan)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VAD 音訊設定 -->
+                <div class="mb-8">
+                    <h3 class="text-sm font-bold text-emerald-400 mb-4 uppercase tracking-wider">🎙️ 錄音與 VAD 設定</h3>
+                    <div class="glass-panel rounded-2xl p-6 border border-slate-700 space-y-6">
+                        <div>
+                            <div class="flex justify-between mb-1">
+                                <label class="text-sm text-slate-300">最小靜音切割長度 (Min Silence Duration)</label>
+                                <span class="text-xs text-blue-400 font-mono" id="vad-val">1.5 秒</span>
+                            </div>
+                            <input type="range" min="0.5" max="3.0" step="0.1" value="1.5" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500" oninput="document.getElementById('vad-val').innerText = this.value + ' 秒'">
+                            <p class="text-[11px] text-slate-500 mt-2">設定越大，句子越完整，但翻譯延遲會增加。</p>
+                        </div>
+                        <div>
+                            <label class="flex items-center justify-between cursor-pointer">
+                                <div>
+                                    <div class="text-sm text-slate-300">啟用背景降噪 (Noise Suppression)</div>
+                                    <div class="text-[11px] text-slate-500">有助於提升觀看 YouTube 音樂直播時的辨識率</div>
+                                </div>
+                                <div class="relative">
+                                    <input type="checkbox" class="sr-only peer" checked>
+                                    <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 儲存按鈕 -->
+                <div class="flex justify-end">
+                    <button onclick="saveSettings()" class="bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-lg font-medium transition-all shadow-lg">
+                        <i class="fas fa-save mr-2"></i>儲存設定
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 簡單的 Toast 通知 -->
+    <div id="toast" class="fixed bottom-5 right-5 transform translate-y-20 opacity-0 transition-all duration-300 glass-panel border-l-4 border-green-500 px-6 py-4 rounded shadow-lg z-50 flex items-center gap-3">
+        <i class="fas fa-check-circle text-green-500"></i>
+        <span class="text-white text-sm" id="toast-msg">設定已儲存</span>
+    </div>
+
+    <script>
+        // ==========================================
+        // 分頁切換邏輯 (Tab Switching)
+        // ==========================================
+        function switchTab(tabId) {
+            // 隱藏所有 tabs
+            ['realtime', 'batch', 'settings'].forEach(id => {
+                const el = document.getElementById('tab-' + id);
+                el.classList.add('opacity-0', 'pointer-events-none');
+                setTimeout(() => el.classList.add('hidden'), 300); // 等待淡出動畫
+                
+                // 重置左邊欄樣式
+                const navBtn = document.getElementById('nav-' + id);
+                navBtn.classList.remove('text-blue-400', 'bg-blue-500/10');
+                navBtn.classList.add('text-slate-500', 'hover:bg-slate-800/50');
+            });
+
+            // 顯示目標 tab
+            setTimeout(() => {
+                const activeEl = document.getElementById('tab-' + tabId);
+                activeEl.classList.remove('hidden');
+                // Force reflow
+                void activeEl.offsetWidth;
+                activeEl.classList.remove('opacity-0', 'pointer-events-none');
+            }, 300);
+
+            // 更新左邊欄狀態
+            const activeNav = document.getElementById('nav-' + tabId);
+            activeNav.classList.remove('text-slate-500', 'hover:bg-slate-800/50');
+            activeNav.classList.add('text-blue-400', 'bg-blue-500/10');
+        }
+
+        // 初始化顯示第一個 Tab
+        switchTab('realtime');
+
+
+        // ==========================================
+        // 模擬即時錄音 (Mock Real-time Recording)
+        // ==========================================
+        let isRecording = false;
+        
+        function toggleRecording() {
+            isRecording = !isRecording;
+            const btn = document.getElementById('record-btn');
+            const icon = document.getElementById('record-icon');
+            const visualizer = document.getElementById('visualizer');
+            const status = document.getElementById('record-status');
+
+            if (isRecording) {
+                // 變成錄音中狀態
+                btn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                btn.classList.add('bg-slate-700', 'hover:bg-slate-600');
+                icon.classList.remove('fa-microphone');
+                icon.classList.add('fa-stop');
+                
+                visualizer.classList.add('recording');
+                status.innerText = "LISTENING...";
+                status.classList.add('text-emerald-400');
+                status.classList.remove('text-slate-500');
+
+                // 模擬 3 秒後加入新字幕
+                setTimeout(() => {
+                    if(!isRecording) return;
+                    addNewBubble();
+                    // 滾動到底部
+                    const container = document.getElementById('chat-container');
+                    container.scrollTop = container.scrollHeight;
+                }, 3000);
+
+            } else {
+                // 停止錄音
+                btn.classList.add('bg-red-500', 'hover:bg-red-600');
+                btn.classList.remove('bg-slate-700', 'hover:bg-slate-600');
+                icon.classList.add('fa-microphone');
+                icon.classList.remove('fa-stop');
+                
+                visualizer.classList.remove('recording');
+                status.innerText = "PAUSED";
+                status.classList.remove('text-emerald-400');
+                status.classList.add('text-slate-500');
+            }
+        }
+
+        function addNewBubble() {
+            const container = document.getElementById('chat-container');
+            const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false });
+            
+            const html = `
+            <div class="flex gap-4 max-w-4xl opacity-0 transition-opacity duration-500 animate-fade-in">
+                <div class="w-10 h-10 rounded-full bg-blue-500/20 flex flex-shrink-0 items-center justify-center text-blue-400 border border-blue-500/30">
+                    <i class="fas fa-user"></i>
+                </div>
+                <div class="bg-slate-800/60 p-4 rounded-2xl rounded-tl-none border border-slate-700/50 shadow-sm flex-1">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Speaker #1</span>
+                        <span class="text-[10px] text-slate-500 font-mono">${timeStr}</span>
+                    </div>
+                    <p class="text-slate-400 text-sm mb-1 italic">"The system uses a queue mechanism to prevent thread explosion."</p>
+                    <p class="text-white text-lg font-medium">「系統使用隊列機制來防止執行緒爆炸。」</p>
+                </div>
+            </div>`;
+            
+            container.insertAdjacentHTML('beforeend', html);
+            
+            // 簡單的 fade in 效果
+            setTimeout(() => {
+                container.lastElementChild.classList.remove('opacity-0');
+            }, 50);
+        }
+
+
+        // ==========================================
+        // 模擬批量上傳 (Mock Batch Processing)
+        // ==========================================
+        function simulateUpload() {
+            const progressArea = document.getElementById('progress-area');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            
+            progressArea.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 10;
+                if (progress >= 100) {
+                    progress = 100;
+                    clearInterval(interval);
+                    showToast("音檔轉換完成！SRT 檔案已匯出。");
+                    setTimeout(() => progressArea.classList.add('hidden'), 3000);
+                }
+                progressBar.style.width = progress + '%';
+                progressText.innerText = Math.floor(progress) + '%';
+            }, 300);
+        }
+
+        // ==========================================
+        // 拖曳 UI 效果
+        // ==========================================
+        const dropzone = document.getElementById('dropzone');
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('drag-over');
+        });
+        ['dragleave', 'drop'].forEach(evt => {
+            dropzone.addEventListener(evt, (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('drag-over');
+            });
+        });
+
+
+        // ==========================================
+        // 工具函數：顯示 Toast 通知
+        // ==========================================
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').innerText = msg;
+            
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        function saveSettings() {
+            showToast("系統設定已成功儲存！");
+        }
+    </script>
+</body>
+</html>

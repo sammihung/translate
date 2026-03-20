@@ -6,7 +6,8 @@ AI Controller - AI 模型管理與推理
 from typing import Optional, Tuple, List
 import threading
 from datetime import datetime
-
+import numpy as np
+from typing import Tuple, Optional
 
 class AIController:
     """AI 控制器 - 管理所有 AI 模型"""

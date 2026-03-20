@@ -1,0 +1,12 @@
+[project]
+name = "qwen-asr-translate"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.4.3",
+    "pyannote-audio>=4.0.4",
+    "qwen-asr>=0.0.6",
+    "torchcodec>=0.10.0",
+]
