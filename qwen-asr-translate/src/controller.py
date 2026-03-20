@@ -31,12 +31,13 @@ class AppController:
         
         # 回調函數
         self.on_subtitle_update: Optional[Callable] = None
+        self.on_translation_complete: Optional[Callable] = None
         self.on_status_change: Optional[Callable] = None
         self.on_device_refresh: Optional[Callable] = None
         
         # 設置
-        self.target_lang = "en"
-        self.use_speaker_diarization = True
+        self.target_lang = "zh"
+        self.use_speaker_diarization = False
         self.bilingual_mode = True
         
         # 字幕歷史
@@ -169,7 +170,7 @@ class AppController:
         while self.is_recording:
             try:
                 queue_size = self.audio_queue.qsize()
-                if queue_size > 3:
+                if queue_size > 10:
                     print(f"⚠️ 警告：系統處理速度過慢，丟棄舊音訊 (Queue Size: {queue_size})")
                     while not self.audio_queue.empty():
                         try:
@@ -185,25 +186,45 @@ class AppController:
                     continue
                 
                 try:
-                    # 處理音訊
-                    original, translated, speaker = self.ai_ctrl.process_audio(audio_data, src_lang=self.src_lang)
+                    # 第一步：只做 ASR 辨識，跳過即時翻譯 (極速返回)
+                    src_lang_param = getattr(self, 'src_lang', 'auto')
+                    original, _, speaker = self.ai_ctrl.process_audio(audio_data, src_lang=src_lang_param, skip_translation=True)
                     
                     if original and original.strip():
                         speaker_id = 1 if speaker is None else (1 if "SPEAKER_00" in str(speaker) else 2)
                         
+                        # 設定佔位符
+                        placeholder_text = "⏳ 翻譯中..."
+                        
                         # 添加到歷史記錄
                         subtitle_item = {
                             "original": original,
-                            "translated": translated,
+                            "translated": placeholder_text,
                             "speaker_id": speaker_id,
                             "timestamp": np.datetime64('now')
                         }
                         self.subtitles.append(subtitle_item)
+                        item_index = len(self.subtitles) - 1
                         
-                        # 觸發回調
+                        # 觸發回調，先將原文畫上 UI，並獲取氣泡 ID
+                        bubble_id = None
                         if self.on_subtitle_update:
-                            self.on_subtitle_update(original, translated, speaker_id)
-                
+                            bubble_id = self.on_subtitle_update(original, placeholder_text, speaker_id)
+                        
+                        # 第二步：如果成功獲取 ID，將原文掟入背景 Thread 慢慢翻譯
+                        if bubble_id:
+                            def translate_task(text_to_translate, b_id, idx):
+                                # 呼叫 Ollama 翻譯
+                                real_translated = self.ai_ctrl.translate_text(text_to_translate)
+                                # 更新記憶體中嘅歷史記錄
+                                if idx < len(self.subtitles):
+                                    self.subtitles[idx]["translated"] = real_translated
+                                # 第三步：通知 UI 將「翻譯中...」換成真正嘅中文字
+                                if self.on_translation_complete:
+                                    self.on_translation_complete(b_id, real_translated)
+                                    
+                            # 啟動獨立線程，唔阻礙主隊列聽下一句說話
+                            threading.Thread(target=translate_task, args=(original, bubble_id, item_index), daemon=True).start()
                 finally:
                     try:
                         self.audio_queue.task_done()

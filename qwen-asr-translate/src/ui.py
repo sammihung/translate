@@ -2,6 +2,7 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from datetime import datetime
+import uuid
 
 class MainUI(ctk.CTkFrame):
     def __init__(self, master, controller=None, **kwargs):
@@ -307,7 +308,59 @@ class MainUI(ctk.CTkFrame):
                 self.record_status_label.configure(text="PAUSED", text_color=self.colors["text_muted"])
         self.after(0, _update)
 
-    def add_chat_bubble(self, speaker_name: str, original: str, translated: str, speaker_id: int = 1):
+    # 記得喺 ui.py 最頂部加入: import uuid
+
+    def add_chat_bubble(self, speaker_name: str, original: str, translated: str, speaker_id: int = 1) -> str:
+        """新增對話氣泡，並回傳專屬的 bubble_id"""
+        import uuid
+        bubble_id = str(uuid.uuid4())
+        
+        def _update(s_id=speaker_id, s_name=speaker_name, orig=original, trans=translated, b_id=bubble_id):
+            if not hasattr(self, 'chat_bubbles'):
+                self.chat_bubbles = {}
+                
+            # 呢度已經全部改用 s_id，唔會再報錯
+            if s_id == 1:
+                align, bubble_color, text_color = "w", "#1e293b", self.colors["primary"]
+            else:
+                align, bubble_color, text_color = "e", "#064e3b", self.colors["success"]
+
+            container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
+            container.pack(fill="x", pady=10, padx=10)
+
+            bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=15)
+            bubble.pack(anchor=align, ipadx=10, ipady=10)
+
+            time_str = datetime.now().strftime("%H:%M:%S")
+            header = ctk.CTkFrame(bubble, fg_color="transparent")
+            header.pack(fill="x", padx=10, pady=(5, 5))
+            
+            # 呢度都全部改用咗 s_id 同 s_name
+            if s_id == 1:
+                ctk.CTkLabel(header, text=s_name, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_color).pack(side="left")
+                ctk.CTkLabel(header, text=time_str, font=ctk.CTkFont(family="Courier", size=10), text_color=self.colors["text_muted"]).pack(side="left", padx=10)
+            else:
+                ctk.CTkLabel(header, text=s_name, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_color).pack(side="right")
+                ctk.CTkLabel(header, text=time_str, font=ctk.CTkFont(family="Courier", size=10), text_color=self.colors["text_muted"]).pack(side="right", padx=10)
+
+            ctk.CTkLabel(bubble, text=orig, font=ctk.CTkFont(size=13, slant="italic"), text_color=self.colors["text_muted"], wraplength=500, justify="left").pack(anchor=align, padx=10, pady=(0, 2))
+            
+            trans_label = ctk.CTkLabel(bubble, text=trans, font=ctk.CTkFont(size=16, weight="bold"), text_color=self.colors["text_light"], wraplength=500, justify="left")
+            trans_label.pack(anchor=align, padx=10, pady=(0, 5))
+            
+            self.chat_bubbles[b_id] = trans_label
+            self.chat_scroll._parent_canvas.yview_moveto(1.0)
+            
+        self.after(0, _update)
+        return bubble_id
+    
+    def update_chat_bubble(self, bubble_id: str, new_translated: str):
+        """根據 bubble_id 更新譯文內容"""
+        def _update():
+            if hasattr(self, 'chat_bubbles') and bubble_id in self.chat_bubbles:
+                self.chat_bubbles[bubble_id].configure(text=new_translated)
+                self.chat_scroll._parent_canvas.yview_moveto(1.0)
+        self.after(0, _update)
         def _update():
             if speaker_id == 1:
                 align, bubble_color, text_color = "w", "#1e293b", self.colors["primary"]

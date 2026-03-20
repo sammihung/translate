@@ -7,7 +7,8 @@ import numpy as np
 from pathlib import Path
 from typing import Optional, List, Tuple
 import torch
-
+import requests
+import json
 
 class SpeakerDiarization:
     """說話者分離模組 - 使用 PyAnnote"""
@@ -260,78 +261,106 @@ class QwenASREngine:
 
 
 class TranslationEngine:
-    """翻譯引擎 - 改用 NLLB 多語言模型 (支援中英日韓互譯)"""
+    """翻譯引擎 - 使用本地端 Ollama (TranslateGemma)"""
     
     def __init__(self, source_lang: str = "auto", target_lang: str = "zh"):
         self.source_lang = source_lang
         self.target_lang = target_lang
-        self.model = None
-        self.tokenizer = None
         self.loaded = False
         
-        # 使用 NLLB 600M 模型，一隻模型支援所有語言，唔使再左換右換
-        self.model_name = "facebook/nllb-200-distilled-600M"
-        
-        # NLLB 語言代碼對應表
+        # 指向 Ollama 嘅 API URL 同你下載咗嘅 Gemma 模型
+        self.api_url = "http://localhost:11434/api/generate"
+        self.model_name = "translategemma:4b-it-q4_K_M"
+        self.history = []
+        # LLM 需要文字指令，所以我哋將代碼轉換成清晰嘅語言名稱
         self.lang_map = {
-            "zh": "zho_Hant", # 繁體中文
-            "en": "eng_Latn", # 英文
-            "ja": "jpn_Jpan", # 日文
-            "ko": "kor_Hang"  # 韓文
+            "zh": "Traditional Chinese (繁體中文)",
+            "en": "English",
+            "ja": "Japanese",
+            "ko": "Korean"
         }
     
     def load_model(self):
-        """載入多語言翻譯模型"""
+        """檢查 Ollama 服務並進行模型預熱 (Warm-up)"""
         if self.loaded:
             return
             
         try:
-            from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-            
-            print(f"Loading multilingual translation model: {self.model_name}...")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self.model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
-            self.loaded = True
-            print(f"[OK] Translation model loaded (NLLB)")
-            
+            # 第一步：Ping 一吓 Ollama 睇吓有無反應
+            response = requests.get("http://127.0.0.1:11434/")
+            if response.status_code == 200:
+                print(f"[OK] 成功連接 Ollama API. 正在預熱模型 (將模型載入 RAM): {self.model_name}...")
+                
+                # 第二步：發送一個「熱身」請求，強迫 Ollama 立即將 2.9GB 模型放入 RAM
+                warmup_payload = {
+                    "model": self.model_name,
+                    "prompt": "hi",  # 極短指令
+                    "stream": False,
+                    "options": {
+                        "num_predict": 1  # 限制佢最多只准答 1 隻字，慳返 CPU 運算時間
+                    }
+                }
+                
+                # 呢個動作會食你 5 到 10 秒時間，但因為係開 App 階段所以無問題
+                requests.post(self.api_url, json=warmup_payload, timeout=60)
+                
+                print(f"[OK] 模型預熱完成！Ollama 翻譯引擎已處於備戰狀態。")
+                self.loaded = True
+            else:
+                print(f"[WARN] Ollama API 回應異常: {response.status_code}")
         except Exception as e:
-            print(f"[WARN] Translation model load failed: {e}")
-            self.model = None
-    
+            print(f"[ERROR] 無法連接 Ollama，請確保 Ollama 已經啟動！({e})")
+            
     def translate(self, text: str) -> str:
-        """翻譯文字"""
-        if not text.strip() or self.model is None or self.tokenizer is None:
-            return text
+        """發送文字俾 Ollama 進行翻譯 (帶上下文記憶)"""
+        if not text.strip():
+            return ""
+            
+        if not self.loaded:
+            self.load_model()
             
         try:
-            import torch
+            tgt_lang_name = self.lang_map.get(self.target_lang, "Traditional Chinese (繁體中文)")
             
-            # 獲取目標語言嘅 NLLB 代碼，預設為繁體中文
-            tgt_lang_code = self.lang_map.get(self.target_lang, "zho_Hant")
+            # 將過去的句子組合成上下文
+            context_str = " ".join(self.history[-3:]) if self.history else "None"
             
-            # Tokenize
-            inputs = self.tokenizer(text, return_tensors="pt", padding=True)
+            # 升級版 Prompt：明確區分「上下文」同「需要翻譯嘅新文字」
+            prompt = (
+                f"Here is the conversation context (for reference only): {context_str}\n\n"
+                f"Translate the following NEW TEXT to {tgt_lang_name}. "
+                f"ONLY output the translation of the NEW TEXT. Do not translate the context, and do not include any explanations.\n\n"
+                f"NEW TEXT: {text}"
+            )
             
-            # 翻譯
-            with torch.no_grad():
-                # 喺度加上 pad_token_id 嚟消除煩人嘅警告
-                # 並使用 forced_bos_token_id 強制輸出你選擇嘅目標語言
-                translated = self.model.generate(
-                    **inputs,
-                    forced_bos_token_id=self.tokenizer.lang_code_to_id[tgt_lang_code],
-                    pad_token_id=self.tokenizer.eos_token_id, 
-                    max_length=128
-                )
+            payload = {
+                "model": self.model_name,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,
+                    "top_p": 0.9
+                }
+            }
             
-            # 解碼
-            result = self.tokenizer.decode(translated[0], skip_special_tokens=True)
+            response = requests.post(self.api_url, json=payload, timeout=60)
             
-            return result
-            
+            if response.status_code == 200:
+                result = response.json().get("response", "").strip()
+                
+                # 成功翻譯後，將今次嘅「原文」加入歷史記錄，保持最多 3 句
+                self.history.append(text)
+                if len(self.history) > 3:
+                    self.history.pop(0)
+                    
+                return result
+            else:
+                return text
+                
         except Exception as e:
-            print(f"翻譯錯誤：{e}")
+            print(f"翻譯發生錯誤：{e}")
             return text
-
+        
 class SubtitleGenerator:
     """雙語字幕生成器"""
     

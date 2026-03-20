@@ -96,7 +96,7 @@ class AIController:
             print(f"[ERROR] 引擎初始化失敗：{e}")
             return False
     
-    def process_audio(self, audio: np.ndarray, src_lang: str = "auto") -> Tuple[str, str, Optional[str]]:
+    def process_audio(self, audio: np.ndarray, src_lang: str = "auto", skip_translation: bool = False) -> Tuple[str, str, Optional[str]]:
         """
         處理音訊數據
         
@@ -150,7 +150,7 @@ class AIController:
             
             # 翻譯
             translated = ""
-            if text.strip() and self.translate_engine:
+            if not skip_translation and text.strip() and self.translate_engine:
                 try:
                     translated = self.translate_engine.translate(text)
                 except Exception as e:
@@ -190,3 +190,12 @@ class AIController:
         """清理資源"""
         # 可以在這裡添加模型卸載邏輯
         pass
+    
+    def translate_text(self, text: str) -> str:
+        """獨立翻譯文字方法 (交俾背景 Thread 呼叫)"""
+        if self.translate_engine:
+            try:
+                return self.translate_engine.translate(text)
+            except Exception as e:
+                print(f"獨立翻譯錯誤：{e}")
+        return text

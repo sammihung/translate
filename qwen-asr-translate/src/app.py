@@ -15,7 +15,8 @@ from pathlib import Path
 from ui import MainUI
 from controller import AppController
 from tkinter import messagebox
-
+import os
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 
 class App(ctk.CTk):
     """主應用程式 - 連接 UI 和 Controller"""
@@ -44,6 +45,7 @@ class App(ctk.CTk):
         
         # 連接 Controller 回調
         self.controller.on_subtitle_update = self._on_subtitle_update
+        self.controller.on_translation_complete = self._on_translation_complete # <--- 新增呢行
         self.controller.on_status_change = self._on_status_change
         
         # 新增：綁定語言切換事件
@@ -62,7 +64,10 @@ class App(ctk.CTk):
         self.controller.src_lang = src
         self.controller.tgt_lang = tgt
         
-        # 提示：切換目標語言(tgt)需要重新載入翻譯模型
+        # 關鍵修復：直接將目標語言 (tgt) 更新入去 Ollama 翻譯引擎度！
+        if hasattr(self.controller, 'ai_ctrl') and self.controller.ai_ctrl.translate_engine:
+            self.controller.ai_ctrl.translate_engine.target_lang = tgt
+            
         print(f"[Language] 已切換: 來源={src}, 目標={tgt}")
     
     def _initialize(self):
@@ -120,13 +125,15 @@ class App(ctk.CTk):
         self.ui.update_record_state(False)
         # 移除舊版不存在的 UI 呼叫，例如 enable_save_button
         
-    def _on_subtitle_update(self, original: str, translated: str, speaker_id: int):
-        """字幕更新回調"""
-        # 修正：新的 ui.py 需要 speaker_name，且方法名稱為 add_chat_bubble
+    def _on_subtitle_update(self, original: str, translated: str, speaker_id: int) -> str:
+        """字幕更新回調 (注意：現在會回傳 bubble_id)"""
         speaker_name = f"SPEAKER #{speaker_id}"
-        self.ui.add_chat_bubble(speaker_name, original, translated, speaker_id)
+        # 回傳 ID 俾 Controller 記住
+        return self.ui.add_chat_bubble(speaker_name, original, translated, speaker_id)
         
-        # update_overlay 在新的 ui 已經不存在，可以直接移除
+    def _on_translation_complete(self, bubble_id: str, translated: str):
+        """背景翻譯完成回調"""
+        self.ui.update_chat_bubble(bubble_id, translated)
     
     def _on_status_change(self, status: str, color: str):
         """狀態變化回調"""

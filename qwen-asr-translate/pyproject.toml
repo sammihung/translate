@@ -5,10 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "customtkinter>=5.2.2",
     "numpy>=2.4.3",
+    "onnxruntime>=1.24.4",
     "pyannote-audio>=4.0.4",
+    "pyaudio>=0.2.14",
     "qwen-asr>=0.0.6",
+    "requests>=2.32.5",
+    "silero-vad>=6.2.1",
     "torchcodec>=0.10.0",
+    "uuid>=1.30",
 ]
 
 [tool.uv.workspace]
