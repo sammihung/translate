@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ui import MainUI
 from controller import AppController
+from tkinter import messagebox
 
 
 class App(ctk.CTk):
@@ -45,11 +46,24 @@ class App(ctk.CTk):
         self.controller.on_subtitle_update = self._on_subtitle_update
         self.controller.on_status_change = self._on_status_change
         
+        # 新增：綁定語言切換事件
+        self.ui.src_lang_combo.configure(command=self._on_lang_change)
+        self.ui.tgt_lang_combo.configure(command=self._on_lang_change)
+        
         # 處理關閉事件
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # 初始化
         self.after(500, self._initialize)
+    
+    def _on_lang_change(self, choice):
+        """處理語言切換"""
+        src, tgt = self.ui.get_selected_languages()
+        self.controller.src_lang = src
+        self.controller.tgt_lang = tgt
+        
+        # 提示：切換目標語言(tgt)需要重新載入翻譯模型
+        print(f"[Language] 已切換: 來源={src}, 目標={tgt}")
     
     def _initialize(self):
         """初始化應用程式"""
@@ -87,31 +101,32 @@ class App(ctk.CTk):
     def _start_recording(self):
         """開始錄音"""
         if not self.controller.is_engines_ready():
-            self.ui.show_error("警告", "引擎尚未完全載入，請稍候...")
+            messagebox.showwarning("警告", "引擎尚未完全載入，請稍候...")
             return
         
         device_name = self.ui.device_var.get()
         device_index = self.controller.audio_mgr.parse_device_index(device_name)
         
         if self.controller.start_recording(device_index):
-            self.ui.set_record_button_state(True)
+            # 修正：ui.py 中的方法已經改名為 update_record_state
+            self.ui.update_record_state(True)
         else:
-            self.ui.show_error("錯誤", "啟動錄音失敗，請檢查音訊設備")
+            messagebox.showerror("錯誤", "啟動錄音失敗，請檢查音訊設備")
     
     def _stop_recording(self):
         """停止錄音"""
         self.controller.stop_recording()
-        self.ui.set_record_button_state(False)
-        self.ui.enable_save_button(True)
-        self.ui.enable_translate_button(True)
-    
+        # 修正：ui.py 中的方法已經改名為 update_record_state
+        self.ui.update_record_state(False)
+        # 移除舊版不存在的 UI 呼叫，例如 enable_save_button
+        
     def _on_subtitle_update(self, original: str, translated: str, speaker_id: int):
         """字幕更新回調"""
-        # 更新 UI 歷史記錄
-        self.ui.add_history_bubble(original, translated, speaker_id)
+        # 修正：新的 ui.py 需要 speaker_name，且方法名稱為 add_chat_bubble
+        speaker_name = f"SPEAKER #{speaker_id}"
+        self.ui.add_chat_bubble(speaker_name, original, translated, speaker_id)
         
-        # 更新懸浮窗
-        self.ui.update_overlay(original, translated, speaker_id)
+        # update_overlay 在新的 ui 已經不存在，可以直接移除
     
     def _on_status_change(self, status: str, color: str):
         """狀態變化回調"""

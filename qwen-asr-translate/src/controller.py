@@ -41,6 +41,9 @@ class AppController:
         
         # 字幕歷史
         self.subtitles = []
+        # 新增語言變數
+        self.src_lang = "auto"
+        self.tgt_lang = "zh"
     
     def initialize_engines(self, progress_callback: Optional[Callable] = None) -> bool:
         """初始化 AI 引擎"""
@@ -183,7 +186,7 @@ class AppController:
                 
                 try:
                     # 處理音訊
-                    original, translated, speaker = self.ai_ctrl.process_audio(audio_data)
+                    original, translated, speaker = self.ai_ctrl.process_audio(audio_data, src_lang=self.src_lang)
                     
                     if original and original.strip():
                         speaker_id = 1 if speaker is None else (1 if "SPEAKER_00" in str(speaker) else 2)

@@ -96,13 +96,14 @@ class AIController:
             print(f"[ERROR] 引擎初始化失敗：{e}")
             return False
     
-    def process_audio(self, audio: np.ndarray) -> Tuple[str, str, Optional[str]]:
+    def process_audio(self, audio: np.ndarray, src_lang: str = "auto") -> Tuple[str, str, Optional[str]]:
         """
         處理音訊數據
         
         Args:
             audio: 音訊數據 (numpy array)
-            
+            src_lang: 原始語言
+
         Returns:
             (original_text, translated_text, speaker_label)
         """
@@ -141,7 +142,9 @@ class AIController:
             text = ""
             if self.asr_engine:
                 try:
-                    text = self.asr_engine.process_audio(segment)
+                    # 如果係 auto 就傳 None，否則傳對應語言代碼
+                    lang_param = None if src_lang == "auto" else src_lang
+                    text = self.asr_engine.process_audio(segment, language=lang_param)
                 except Exception as e:
                     print(f"ASR 處理錯誤：{e}")
             
