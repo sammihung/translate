@@ -1,494 +1,279 @@
-"""
-UI Layer - 所有使用者介面組件
-負責顯示和使用者互動，與業務邏輯分離
-"""
-
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from typing import Callable, Optional, List
 from datetime import datetime
 
-
-class SubtitleOverlay(ctk.CTkToplevel):
-    """懸浮字幕條：無邊框、半透明、永遠置頂"""
-    
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.overrideredirect(True)
-        self.attributes("-topmost", True)
-        self.attributes("-alpha", 0.9)
-        self.configure(fg_color="#000000")
-        
-        width, height = 750, 110
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        x = (screen_width - width) // 2
-        y = int(screen_height * 0.8)
-        self.geometry(f"{width}x{height}+{x}+{y}")
-
-        self.container = ctk.CTkFrame(self, fg_color="#0f172a", corner_radius=12, 
-                                      border_width=1, border_color="#1e293b")
-        self.container.pack(fill="both", expand=True, padx=10, pady=10)
-
-        self.color_bar = ctk.CTkFrame(self.container, width=6, fg_color="#3b82f6", 
-                                      corner_radius=3)
-        self.color_bar.pack(side="left", fill="y", padx=(15, 10), pady=15)
-
-        self.text_frame = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.text_frame.pack(side="left", fill="both", expand=True, pady=12, padx=(0, 15))
-
-        self.header_frame = ctk.CTkFrame(self.text_frame, fg_color="transparent")
-        self.header_frame.pack(fill="x", pady=(0, 4))
-
-        self.speaker_badge = ctk.CTkLabel(
-            self.header_frame, text="SPEAKER #1", font=("Arial", 10, "bold"),
-            fg_color="#1e3a8a", text_color="#60a5fa", corner_radius=4, padx=6, pady=2
-        )
-        self.speaker_badge.pack(side="left")
-
-        self.close_btn = ctk.CTkLabel(self.header_frame, text="×", font=("Arial", 16), 
-                                      text_color="#64748b", cursor="hand2")
-        self.close_btn.pack(side="right")
-        self.close_btn.bind("<Button-1>", lambda e: self.withdraw())
-
-        self.label_orig = ctk.CTkLabel(
-            self.text_frame, text="", font=("Arial", 13, "italic"),
-            text_color="#94a3b8", wraplength=650, justify="left"
-        )
-        self.label_orig.pack(anchor="w", pady=(0, 2))
-
-        self.label_trans = ctk.CTkLabel(
-            self.text_frame, text="等待語音輸入...", font=("Microsoft YaHei", 22, "bold"),
-            text_color="#ffffff", wraplength=650, justify="left"
-        )
-        self.label_trans.pack(anchor="w")
-
-        for element in [self.container, self.text_frame, self.header_frame, 
-                        self.label_orig, self.label_trans]:
-            element.bind("<Button-1>", self.start_move)
-            element.bind("<B1-Motion>", self.do_move)
-
-    def start_move(self, event):
-        self._x = event.x_root - self.winfo_x()
-        self._y = event.y_root - self.winfo_y()
-
-    def do_move(self, event):
-        x = event.x_root - self._x
-        y = event.y_root - self._y
-        self.geometry(f"+{x}+{y}")
-
-    def update_text(self, orig, trans, speaker_id=1):
-        """根據 Speaker ID 動態改變顏色與文字"""
-        if speaker_id == 1:
-            color_main = "#3b82f6"  # 藍色
-            color_bg = "#1e3a8a"
-            speaker_name = "SPEAKER 1"
-        else:
-            color_main = "#10b981"  # 綠色
-            color_bg = "#064e3b"
-            speaker_name = "SPEAKER 2"
-
-        self.color_bar.configure(fg_color=color_main)
-        self.speaker_badge.configure(text=speaker_name, fg_color=color_bg, 
-                                     text_color=color_main)
-        self.label_orig.configure(text=orig)
-        self.label_trans.configure(text=trans)
-
-
-class SettingsPanel(ctk.CTkToplevel):
-    """設置面板 - 系統偏好設定"""
-    
-    def __init__(self, parent, on_save: Optional[Callable] = None):
-        super().__init__(parent)
-        self.title("設置")
-        self.geometry("500x400")
-        self.resizable(False, False)
-        self.on_save = on_save
-        
-        # 標題
-        title_label = ctk.CTkLabel(
-            self, text="⚙️ 應用程式設置", 
-            font=("Arial", 16, "bold"), text_color="#e2e8f0"
-        )
-        title_label.pack(pady=15)
-        
-        # 設定框架
-        settings_frame = ctk.CTkFrame(self, fg_color="transparent")
-        settings_frame.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        # 目標語言選擇
-        ctk.CTkLabel(settings_frame, text="翻譯目標語言:", 
-                     font=("Arial", 12), text_color="#cbd5e1").pack(anchor="w", pady=(10, 5))
-        
-        self.language_var = ctk.StringVar(value="en")
-        lang_menu = ctk.CTkComboBox(
-            settings_frame, values=["en (English)", "zh (中文)", "ja (日本語)", "ko (한국어)", "es (Español)", "fr (Français)"],
-            variable=self.language_var, width=350, fg_color="#1e293b"
-        )
-        lang_menu.pack(anchor="w", pady=(0, 15))
-        
-        # 說話者分離開關
-        self.diarization_var = ctk.BooleanVar(value=True)
-        diarization_check = ctk.CTkCheckBox(
-            settings_frame, text="啟用說話者分離 (Speaker Diarization)",
-            variable=self.diarization_var, fg_color="#3b82f6",
-            font=("Arial", 11), text_color="#cbd5e1"
-        )
-        diarization_check.pack(anchor="w", pady=10)
-        
-        # 雙語字幕開關
-        self.bilingual_var = ctk.BooleanVar(value=True)
-        bilingual_check = ctk.CTkCheckBox(
-            settings_frame, text="產生雙語 SRT 字幕檔",
-            variable=self.bilingual_var, fg_color="#3b82f6",
-            font=("Arial", 11), text_color="#cbd5e1"
-        )
-        bilingual_check.pack(anchor="w", pady=10)
-        
-        # ASR 模型選擇
-        ctk.CTkLabel(settings_frame, text="ASR 模型:", 
-                     font=("Arial", 12), text_color="#cbd5e1").pack(anchor="w", pady=(15, 5))
-        
-        self.asr_model_var = ctk.StringVar(value="qwen3-0.6b")
-        asr_menu = ctk.CTkComboBox(
-            settings_frame, values=["Qwen3-ASR-0.6B (快速)", "Qwen3-ASR-1.7B (準確)"],
-            variable=self.asr_model_var, width=350, fg_color="#1e293b"
-        )
-        asr_menu.pack(anchor="w", pady=(0, 20))
-        
-        # 儲存按鈕
-        save_btn = ctk.CTkButton(
-            settings_frame, text="💾 儲存設置", height=35,
-            fg_color="#3b82f6", hover_color="#2563eb",
-            command=self.save_settings
-        )
-        save_btn.pack(pady=10)
-    
-    def save_settings(self):
-        """保存設置並調用回調"""
-        if self.on_save:
-            settings = {
-                "language": self.language_var.get().split()[0],  # 提取語言代碼
-                "diarization": self.diarization_var.get(),
-                "bilingual": self.bilingual_var.get(),
-                "asr_model": self.asr_model_var.get()
-            }
-            self.on_save(settings)
-        messagebox.showinfo("完成", "設置已儲存")
-        self.destroy()
-
-
 class MainUI(ctk.CTkFrame):
-    """主 UI 框架 - 現代化設計"""
-    
-    def __init__(self, parent):
-        super().__init__(parent)
+    def __init__(self, master, controller=None, **kwargs):
+        super().__init__(master, **kwargs)
         
-        # 回調函數
-        self.on_record_toggle: Optional[Callable] = None
-        self.on_upload_file: Optional[Callable] = None
-        self.on_settings_open: Optional[Callable] = None
-        self.on_clear_history: Optional[Callable] = None
-        self.on_translate_click: Optional[Callable] = None
-        self.on_save_subtitle: Optional[Callable] = None
+        # 如果冇特別指定 controller，預設 master (app.py) 就係 controller
+        self.controller = controller if controller else master
         
-        self.subtitles = []
-        
-        # 初始化懸浮窗 (預設隱藏)
-        self.overlay = SubtitleOverlay(self)
-        self.overlay.withdraw()
-        
-        self.setup_ui()
-    
-    def setup_ui(self):
-        """設定現代化介面"""
-        self.configure(fg_color="#0b0f1a")
-        
-        # UI 佈局
-        self.grid_columnconfigure(1, weight=1)
+        # 設定整體 Grid 佈局 (1 行 2 列：Sidebar + MainContent)
         self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        
+        # 定義顏色主題 (模仿網頁版嘅深藍色調)
+        self.colors = {
+            "bg_dark": "#0b0f19",       # 最深底色
+            "bg_panel": "#1e293b",      # 面板底色
+            "primary": "#3b82f6",       # 藍色 (按鈕/高亮)
+            "primary_hover": "#2563eb",
+            "primary_muted": "#1e3a8a", # 模擬半透明藍色底 (Tkinter 唔支援 8 位 hex)
+            "danger": "#ef4444",        # 紅色 (錄音)
+            "danger_hover": "#dc2626",
+            "success": "#10b981",       # 綠色
+            "text_light": "#f8fafc",
+            "text_muted": "#94a3b8"
+        }
+        
+        # 設置主背景色
+        self.configure(fg_color=self.colors["bg_dark"])
+        
+        self._build_sidebar()
+        self._build_main_container()
+        
+        # 初始化視圖
+        self.switch_view("realtime")
 
-        # 1. 側邊欄
-        self.sidebar = ctk.CTkFrame(self, width=70, corner_radius=0, fg_color="#070a13")
+    # ==========================================
+    # 1. 構建左側導覽列 (Sidebar)
+    # ==========================================
+    def _build_sidebar(self):
+        self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0, fg_color="#0f172a")
         self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.sidebar.grid_rowconfigure(5, weight=1) # 將底部推落去
         
-        # 側邊欄按鈕
-        self.btn_home = ctk.CTkButton(self.sidebar, text="🏠", width=50, height=50,
-                                      fg_color="#1e293b", hover_color="#334155",
-                                      font=("Arial", 20))
-        self.btn_home.pack(pady=10)
-        
-        self.btn_settings_sidebar = ctk.CTkButton(self.sidebar, text="⚙️", width=50, height=50,
-                                                  fg_color="transparent", hover_color="#334155",
-                                                  font=("Arial", 20),
-                                                  command=self._on_settings)
-        self.btn_settings_sidebar.pack(pady=10)
-        
-        # 2. 主內容
-        self.main_view = ctk.CTkFrame(self, fg_color="#0b0f1a", corner_radius=0)
-        self.main_view.grid(row=0, column=1, sticky="nsew")
-        self.main_view.grid_columnconfigure(0, weight=1)
-        self.main_view.grid_rowconfigure(1, weight=1)
-
-        self.setup_header()
-        self.setup_history_area()
-        self.setup_controls()
-    
-    def setup_header(self):
-        """設定頂部控制列"""
-        header = ctk.CTkFrame(self.main_view, fg_color="transparent", height=60)
-        header.grid(row=0, column=0, sticky="ew", padx=20, pady=10)
-        
-        # 左側：設備選擇
-        ctk.CTkLabel(header, text="🎤 音訊輸入裝置:", font=("Arial", 12, "bold"),
-                    text_color="#e2e8f0").pack(side="left")
-        
-        self.device_var = ctk.StringVar(value="選擇音訊裝置")
-        self.device_menu = ctk.CTkComboBox(header, values=[],
-                                          variable=self.device_var, width=250,
-                                          fg_color="#1e293b", border_color="#334155")
-        self.device_menu.pack(side="left", padx=10)
-        
-        refresh_btn = ctk.CTkButton(header, text="🔄", width=40, height=30,
-                                   fg_color="#334155", hover_color="#475569")
-        refresh_btn.pack(side="left", padx=5)
-        
-        # 右側：懸浮窗開關
-        self.btn_overlay = ctk.CTkButton(
-            header, text="🖼️ 懸浮窗", width=120, height=30, 
-            fg_color="#3b82f6", hover_color="#2563eb",
-            command=self.toggle_overlay
+        # Logo 區域
+        self.logo_label = ctk.CTkLabel(
+            self.sidebar, text="🌊 QwenASR", font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=self.colors["primary"]
         )
-        self.btn_overlay.pack(side="right")
+        self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 30))
         
-        # 狀態顯示
-        self.status_label = ctk.CTkLabel(header, text="⏹ 就緒", 
-                                        text_color="#94a3b8", font=("Arial", 11))
-        self.status_label.pack(side="right", padx=20)
-    
-    def setup_history_area(self):
-        """設定歷史記錄區域（聊天氣泡風格）"""
-        self.scroll_frame = ctk.CTkScrollableFrame(self.main_view, fg_color="transparent",
-                                                   label_text="📝 即時對話記錄")
-        self.scroll_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
-    
-    def setup_controls(self):
-        """設定底部控制列"""
-        footer = ctk.CTkFrame(self.main_view, fg_color="#070a13", height=120)
-        footer.grid(row=2, column=0, sticky="ew")
+        # 導覽按鈕
+        self.nav_buttons = {}
+        nav_items = [
+            ("realtime", "⚡ 即時翻譯"),
+            ("batch", "📁 批量上傳"),
+            ("settings", "⚙️ 系統設定")
+        ]
         
-        # 上排按鈕
-        top_row = ctk.CTkFrame(footer, fg_color="transparent")
-        top_row.pack(fill="x", padx=20, pady=(10, 5))
+        for idx, (view_id, text) in enumerate(nav_items, start=1):
+            btn = ctk.CTkButton(
+                self.sidebar, text=text, font=ctk.CTkFont(size=15),
+                fg_color="transparent", text_color=self.colors["text_muted"],
+                hover_color=self.colors["bg_panel"], anchor="w", height=45,
+                command=lambda vid=view_id: self.switch_view(vid)
+            )
+            btn.grid(row=idx, column=0, padx=15, pady=5, sticky="ew")
+            self.nav_buttons[view_id] = btn
+
+        # 系統狀態標籤 (底部)
+        self.status_indicator = ctk.CTkLabel(
+            self.sidebar, text="🟢 系統就緒", font=ctk.CTkFont(size=12), text_color=self.colors["success"]
+        )
+        self.status_indicator.grid(row=6, column=0, padx=20, pady=20, sticky="w")
+
+    # ==========================================
+    # 2. 構建主內容區 (Main Container)
+    # ==========================================
+    def _build_main_container(self):
+        self.main_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_container.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+        self.main_container.grid_rowconfigure(0, weight=1)
+        self.main_container.grid_columnconfigure(0, weight=1)
         
-        # 錄音按鈕
+        # 預先建立三個畫面，但預設隱藏
+        self.views = {
+            "realtime": self._build_realtime_view(),
+            "batch": self._build_batch_view(),
+            "settings": self._build_settings_view()
+        }
+
+    # ==========================================
+    # 3. 視圖：即時翻譯 (Real-time View)
+    # ==========================================
+    def _build_realtime_view(self):
+        frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        frame.grid_rowconfigure(1, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+        
+        # --- 頂部控制列 ---
+        header = ctk.CTkFrame(frame, height=60, fg_color=self.colors["bg_panel"], corner_radius=15)
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 15))
+        
+        ctk.CTkLabel(header, text="音訊輸入:", text_color=self.colors["text_muted"]).pack(side="left", padx=(20, 10), pady=15)
+        self.device_combo = ctk.CTkComboBox(header, values=["🎵 系統音源 (Stereo Mix)", "🎤 內建麥克風"], width=250, fg_color="#0f172a", border_color="#334155")
+        self.device_combo.pack(side="left", padx=5)
+        
+        self.lang_info = ctk.CTkLabel(header, text="日文 (JA) ➔ 繁體中文 (ZH-HK)", font=ctk.CTkFont(weight="bold"), text_color=self.colors["text_light"])
+        self.lang_info.pack(side="right", padx=20)
+
+        # --- 對話/字幕顯示區 ---
+        self.chat_scroll = ctk.CTkScrollableFrame(frame, fg_color="transparent")
+        self.chat_scroll.grid(row=1, column=0, sticky="nsew")
+
+        # --- 底部控制列 (圓角懸浮感) ---
+        bottom_bar = ctk.CTkFrame(frame, height=80, fg_color=self.colors["bg_panel"], corner_radius=20)
+        bottom_bar.grid(row=2, column=0, sticky="ew", pady=(15, 0))
+        
+        # 錄音大按鈕 (圓形)
         self.record_btn = ctk.CTkButton(
-            top_row, text="▶ 開始錄音", height=45, width=150, corner_radius=22,
-            fg_color="#ef4444", hover_color="#dc2626",
-            font=("Arial", 16, "bold"),
-            command=self._on_record_toggle
+            bottom_bar, text="🎤", width=60, height=60, corner_radius=30,
+            font=ctk.CTkFont(size=24), fg_color=self.colors["danger"], hover_color=self.colors["danger_hover"],
+            command=self._on_record_click
         )
-        self.record_btn.pack(side="left", padx=5)
+        self.record_btn.pack(side="left", padx=20, pady=10)
         
-        # 上傳檔案按鈕
-        self.upload_btn = ctk.CTkButton(
-            top_row, text="📁 上傳檔案", height=45, width=150, corner_radius=22,
-            fg_color="#3b82f6", hover_color="#2563eb",
-            font=("Arial", 14, "bold"),
-            command=self._on_upload_file
-        )
-        self.upload_btn.pack(side="left", padx=5)
+        # 狀態文字
+        self.record_status_label = ctk.CTkLabel(bottom_bar, text="準備就緒 (READY)", font=ctk.CTkFont(family="Courier", size=14), text_color=self.colors["text_muted"])
+        self.record_status_label.pack(side="left", padx=10)
         
-        # 翻譯按鈕
-        self.translate_btn = ctk.CTkButton(
-            top_row, text="🌐 翻譯", height=45, width=120, corner_radius=22,
-            fg_color="#10b981", hover_color="#059669",
-            font=("Arial", 14, "bold"),
-            command=self._on_translate_click,
-            state="disabled"
-        )
-        self.translate_btn.pack(side="left", padx=5)
+        # 動作按鈕
+        export_btn = ctk.CTkButton(bottom_bar, text="匯出 SRT", fg_color=self.colors["primary"], hover_color=self.colors["primary_hover"], width=100)
+        export_btn.pack(side="right", padx=20)
         
-        # 設置按鈕
-        self.settings_btn = ctk.CTkButton(
-            top_row, text="⚙️ 設置", height=45, width=100, corner_radius=22,
-            fg_color="#8b5cf6", hover_color="#7c3aed",
-            font=("Arial", 14, "bold"),
-            command=self._on_settings
-        )
-        self.settings_btn.pack(side="left", padx=5)
+        return frame
+
+    # ==========================================
+    # 4. 視圖：批量上傳 (Batch View)
+    # ==========================================
+    def _build_batch_view(self):
+        frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
         
-        # 下排按鈕
-        bottom_row = ctk.CTkFrame(footer, fg_color="transparent")
-        bottom_row.pack(fill="x", padx=20, pady=(0, 10))
+        title = ctk.CTkLabel(frame, text="批量音檔轉字幕", font=ctk.CTkFont(size=24, weight="bold"), text_color=self.colors["text_light"])
+        title.pack(anchor="w", pady=(0, 20))
         
-        # 儲存按鈕
-        self.save_btn = ctk.CTkButton(
-            bottom_row, text="💾 儲存 SRT", height=35, width=120, corner_radius=18,
-            fg_color="#334155", hover_color="#475569",
-            state="disabled", command=self._on_save_subtitle
-        )
-        self.save_btn.pack(side="left", padx=5)
+        # 模擬拖曳區
+        dropzone = ctk.CTkFrame(frame, height=200, fg_color=self.colors["bg_panel"], border_width=2, border_color="#334155")
+        dropzone.pack(fill="x", pady=10)
+        dropzone.pack_propagate(False)
         
-        # 清空按鈕
-        self.clear_btn = ctk.CTkButton(
-            bottom_row, text="🗑️ 清空記錄", height=35, width=120, corner_radius=18,
-            fg_color="#64748b", hover_color="#475569",
-            command=self._on_clear_history
-        )
-        self.clear_btn.pack(side="left", padx=5)
-    
-    def toggle_overlay(self):
-        """切換懸浮窗顯示"""
-        if self.overlay.winfo_viewable():
-            self.overlay.withdraw()
+        ctk.CTkLabel(dropzone, text="☁️\n拖曳音檔或影片到此處\n(支援 MP3, WAV, MP4)", font=ctk.CTkFont(size=16), text_color=self.colors["text_muted"], justify="center").pack(expand=True)
+        
+        # 設定區
+        settings_panel = ctk.CTkFrame(frame, fg_color=self.colors["bg_panel"], corner_radius=15)
+        settings_panel.pack(fill="x", pady=20, ipady=10)
+        
+        ctk.CTkCheckBox(settings_panel, text="產生雙語 SRT 字幕檔", text_color=self.colors["text_light"]).pack(anchor="w", padx=20, pady=15)
+        ctk.CTkCheckBox(settings_panel, text="啟用說話者分離 (Speaker Diarization)", text_color=self.colors["text_light"]).pack(anchor="w", padx=20, pady=5)
+        
+        start_btn = ctk.CTkButton(frame, text="▶ 開始批次轉換", height=45, fg_color=self.colors["primary"])
+        start_btn.pack(anchor="e", pady=20)
+        
+        return frame
+
+    # ==========================================
+    # 5. 視圖：系統設定 (Settings View)
+    # ==========================================
+    def _build_settings_view(self):
+        frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        
+        title = ctk.CTkLabel(frame, text="系統偏好設定", font=ctk.CTkFont(size=24, weight="bold"), text_color=self.colors["text_light"])
+        title.pack(anchor="w", pady=(0, 20))
+        
+        panel = ctk.CTkFrame(frame, fg_color=self.colors["bg_panel"], corner_radius=15)
+        panel.pack(fill="x", pady=10, ipadx=20, ipady=20)
+        
+        ctk.CTkLabel(panel, text="ASR 語音辨識模型", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(0, 5))
+        ctk.CTkComboBox(panel, values=["Qwen3-ASR-0.6B (速度快)", "Qwen3-ASR-1.7B (高準確)"], width=400, fg_color="#0f172a").pack(anchor="w", pady=(0, 20))
+        
+        ctk.CTkLabel(panel, text="最小靜音切割長度 (VAD Duration)", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(0, 5))
+        vad_slider = ctk.CTkSlider(panel, from_=0.5, to=3.0, number_of_steps=25, width=400)
+        vad_slider.pack(anchor="w", pady=(0, 20))
+        
+        save_btn = ctk.CTkButton(frame, text="💾 儲存設定", height=45, fg_color=self.colors["primary"])
+        save_btn.pack(anchor="e", pady=20)
+        
+        return frame
+
+    # ==========================================
+    # UI 互動邏輯
+    # ==========================================
+    def switch_view(self, view_id):
+        """切換主畫面"""
+        # 隱藏所有視圖
+        for view in self.views.values():
+            view.grid_forget()
+            
+        # 重置側邊欄按鈕顏色
+        for btn in self.nav_buttons.values():
+            btn.configure(fg_color="transparent", text_color=self.colors["text_muted"])
+            
+        # 顯示選擇嘅視圖
+        self.views[view_id].grid(row=0, column=0, sticky="nsew")
+        self.nav_buttons[view_id].configure(fg_color=self.colors["primary_muted"], text_color=self.colors["primary"]) # 使用實色深藍模擬半透明
+
+    def _on_record_click(self):
+        """處理錄音按鈕點擊"""
+        # 檢查 controller 是否有 toggle_recording 方法
+        if self.controller and hasattr(self.controller, 'toggle_recording'):
+            self.controller.toggle_recording()
         else:
-            self.overlay.deiconify()
-    
-    def set_device_list(self, devices: List[str]):
-        """設置音訊設備列表"""
-        self.device_menu.configure(values=devices)
-    
-    def set_status(self, status: str, color: str = "#94a3b8"):
-        """設置狀態標籤"""
-        self.status_label.configure(text=status, text_color=color)
-    
-    def enable_record_button(self, enable: bool = True):
-        """啟用/禁用錄音按鈕"""
-        self.record_btn.configure(state="normal" if enable else "disabled")
-    
-    def set_record_button_state(self, recording: bool):
-        """設置錄音按鈕狀態"""
-        if recording:
-            self.record_btn.configure(text="■ 停止錄音", fg_color="#b91c1c")
+            # 如果無 Controller，用嚟預覽 UI 效果
+            self.update_record_state(not hasattr(self, 'is_rec') or not self.is_rec)
+            if self.is_rec:
+                self.add_chat_bubble("Speaker #1", "The UI layout has been updated beautifully.", "介面排版已經更新得非常漂亮了。", 1)
+
+    def update_record_state(self, is_recording: bool):
+        """更新錄音按鈕狀態 (由 Controller 呼叫)"""
+        self.is_rec = is_recording
+        if is_recording:
+            self.record_btn.configure(text="■", fg_color=self.colors["bg_panel"], hover_color="#334155")
+            self.record_status_label.configure(text="LISTENING...", text_color=self.colors["success"])
         else:
-            self.record_btn.configure(text="▶ 開始錄音", fg_color="#ef4444")
-    
-    def add_history_bubble(self, original: str, translated: str, speaker_id: int = 1):
-        """添加歷史記錄氣泡"""
-        # 確定顯示風格
+            self.record_btn.configure(text="🎤", fg_color=self.colors["danger"], hover_color=self.colors["danger_hover"])
+            self.record_status_label.configure(text="PAUSED", text_color=self.colors["text_muted"])
+
+    def add_chat_bubble(self, speaker_name: str, original: str, translated: str, speaker_id: int = 1):
+        """加入對話氣泡"""
+        # 根據 Speaker ID 決定顏色同對齊方向
         if speaker_id == 1:
-            bubble_color = "#475569"
-            text_color = "#3b82f6"
-            speaker_name = "Speaker 1"
-            border_color = "#334155"
-            align = "w"
+            align = "w"  # 靠左
+            bubble_color = "#1e293b" # 深藍灰
+            text_color = self.colors["primary"]
         else:
-            bubble_color = "#334155"
-            text_color = "#10b981"
-            speaker_name = "Speaker 2"
-            border_color = "#1e293b"
-            align = "e"
+            align = "e"  # 靠右
+            bubble_color = "#064e3b" # 深綠
+            text_color = self.colors["success"]
 
-        # 容器
-        container = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
-        container.pack(fill="x", padx=10, pady=5)
+        # 氣泡外層容器
+        container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
+        container.pack(fill="x", pady=10, padx=10)
 
-        # 實際氣泡
-        bubble = ctk.CTkFrame(container, fg_color=bubble_color, border_width=1, 
-                             border_color=border_color, corner_radius=12)
-        bubble.pack(anchor=align, padx=10, pady=5)
+        # 氣泡本體
+        bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=15)
+        bubble.pack(anchor=align, ipadx=10, ipady=10)
 
-        # 標題列
-        header = ctk.CTkFrame(bubble, fg_color="transparent")
-        header.pack(fill="x", padx=12, pady=(8, 0))
-
+        # 標題 (名字 + 時間)
         time_str = datetime.now().strftime("%H:%M:%S")
+        header = ctk.CTkFrame(bubble, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=(5, 5))
         
         if speaker_id == 1:
-            ctk.CTkLabel(header, text=speaker_name, font=("Arial", 11, "bold"), 
-                        text_color=text_color).pack(side="left")
-            ctk.CTkLabel(header, text=time_str, font=("Courier", 10), 
-                        text_color="#64748b").pack(side="left", padx=(10, 0))
+            ctk.CTkLabel(header, text=speaker_name, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_color).pack(side="left")
+            ctk.CTkLabel(header, text=time_str, font=ctk.CTkFont(family="Courier", size=10), text_color=self.colors["text_muted"]).pack(side="left", padx=10)
         else:
-            ctk.CTkLabel(header, text=speaker_name, font=("Arial", 11, "bold"), 
-                        text_color=text_color).pack(side="right")
-            ctk.CTkLabel(header, text=time_str, font=("Courier", 10), 
-                        text_color="#64748b").pack(side="right", padx=(0, 10))
+            ctk.CTkLabel(header, text=speaker_name, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_color).pack(side="right")
+            ctk.CTkLabel(header, text=time_str, font=ctk.CTkFont(family="Courier", size=10), text_color=self.colors["text_muted"]).pack(side="right", padx=10)
 
-        # 文字內容
-        ctk.CTkLabel(bubble, text=original, font=("Arial", 13, "italic"), 
-                    text_color="#94a3b8", justify="left").pack(anchor=align, 
-                    padx=15, pady=(4, 0))
-        ctk.CTkLabel(bubble, text=translated, font=("Microsoft YaHei", 16, "bold"), 
-                    text_color="#f8fafc", justify="left").pack(anchor=align, 
-                    padx=15, pady=(2, 10))
-        
-        # 自動滾動到底部
-        self.scroll_frame._parent_canvas.yview_moveto(1.0)
+        # 內文
+        ctk.CTkLabel(bubble, text=original, font=ctk.CTkFont(size=13, slant="italic"), text_color=self.colors["text_muted"], wraplength=500, justify="left").pack(anchor=align, padx=10, pady=(0, 2))
+        ctk.CTkLabel(bubble, text=translated, font=ctk.CTkFont(size=16, weight="bold"), text_color=self.colors["text_light"], wraplength=500, justify="left").pack(anchor=align, padx=10, pady=(0, 5))
+
+        # 自動捲動到底部
+        self.chat_scroll._parent_canvas.yview_moveto(1.0)
+
+# 獨立運行測試 (如果直接執行此檔案)
+if __name__ == "__main__":
+    ctk.set_appearance_mode("dark")
+    root = ctk.CTk()
+    root.title("QwenASR Pro UI Preview")
+    root.geometry("1050x700")
     
-    def update_overlay(self, original: str, translated: str, speaker_id: int = 1):
-        """更新懸浮窗內容"""
-        self.overlay.update_text(original, translated, speaker_id)
+    app = MainUI(master=root)
+    app.pack(fill="both", expand=True)
     
-    def enable_translate_button(self, enable: bool = True):
-        """啟用/禁用翻譯按鈕"""
-        self.translate_btn.configure(state="normal" if enable else "disabled")
-    
-    def enable_save_button(self, enable: bool = True):
-        """啟用/禁用儲存按鈕"""
-        self.save_btn.configure(state="normal" if enable else "disabled")
-    
-    def clear_history(self):
-        """清空歷史記錄"""
-        for widget in self.scroll_frame.winfo_children():
-            widget.destroy()
-        self.subtitles = []
-    
-    def ask_save_file(self, default_name: str = "output") -> Optional[str]:
-        """詢問保存檔案位置"""
-        filepath = filedialog.asksaveasfilename(
-            defaultextension=".srt",
-            initialfile=f"{default_name}.srt",
-            filetypes=[("SRT 字幕檔", "*.srt"), ("所有檔案", "*.*")]
-        )
-        return filepath if filepath else None
-    
-    def ask_open_audio_file(self) -> Optional[str]:
-        """詢問打開音訊檔案"""
-        filepath = filedialog.askopenfilename(
-            title="選擇音訊檔案",
-            filetypes=[
-                ("音訊檔案", "*.mp3 *.wav *.m4a *.flac *.mp4 *.mkv"),
-                ("所有檔案", "*.*")
-            ]
-        )
-        return filepath if filepath else None
-    
-    def show_error(self, title: str, message: str):
-        """顯示錯誤對話框"""
-        messagebox.showerror(title, message)
-    
-    def show_info(self, title: str, message: str):
-        """顯示信息對話框"""
-        messagebox.showinfo(title, message)
-    
-    def show_settings_panel(self, on_save: Optional[Callable] = None):
-        """顯示設置面板"""
-        SettingsPanel(self, on_save=on_save)
-    
-    # 內部回調方法
-    def _on_record_toggle(self):
-        if self.on_record_toggle:
-            self.on_record_toggle()
-    
-    def _on_upload_file(self):
-        if self.on_upload_file:
-            self.on_upload_file()
-    
-    def _on_settings(self):
-        if self.on_settings_open:
-            self.on_settings_open()
-    
-    def _on_clear_history(self):
-        if self.on_clear_history:
-            self.on_clear_history()
-    
-    def _on_translate_click(self):
-        if self.on_translate_click:
-            self.on_translate_click()
-    
-    def _on_save_subtitle(self):
-        if self.on_save_subtitle:
-            self.on_save_subtitle()
+    root.mainloop()
