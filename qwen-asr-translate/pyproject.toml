@@ -10,3 +10,8 @@ dependencies = [
     "qwen-asr>=0.0.6",
     "torchcodec>=0.10.0",
 ]
+
+[tool.uv.workspace]
+members = [
+    "myproject",
+]
