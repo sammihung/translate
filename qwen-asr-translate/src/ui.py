@@ -38,6 +38,7 @@ class MainUI(ctk.CTkFrame):
         self.asr_model_var = ctk.StringVar(value="Qwen3-ASR-0.6B")
         self.compute_device_var = ctk.StringVar(value="CPU")
         self.vad_duration_var = ctk.DoubleVar(value=1.5)
+        self.use_full_model_var = ctk.BooleanVar(value=False)
         
         self._build_sidebar()
         self._build_main_container()
@@ -220,6 +221,16 @@ class MainUI(ctk.CTkFrame):
         # 綁定 Slider 更新數值 Label
         vad_slider.configure(command=lambda val: vad_value_label.configure(text=f"{val:.1f}s"))
         
+        ctk.CTkLabel(panel, text="翻譯模型進階設定", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(15, 5))
+        
+        self.full_model_checkbox = ctk.CTkCheckBox(
+            panel, 
+            text="啟用滿血版翻譯模型 (fp16) - ⚠️ 建議僅在有獨立 GPU 時開啟", 
+            variable=self.use_full_model_var,
+            text_color=self.colors["text_light"]
+        )
+        self.full_model_checkbox.pack(anchor="w", pady=(0, 20))
+        
         save_btn = ctk.CTkButton(frame, text="💾 儲存設定", height=45, fg_color=self.colors["primary"])
         save_btn.pack(anchor="e", pady=20)
         
@@ -268,7 +279,8 @@ class MainUI(ctk.CTkFrame):
         return {
             "model": self.asr_model_var.get(),
             "device": self.compute_device_var.get(),
-            "vad_duration": self.vad_duration_var.get()
+            "vad_duration": self.vad_duration_var.get(),
+            "use_full_model": self.use_full_model_var.get() # <--- 新增呢行
         }
 
     # ==========================================

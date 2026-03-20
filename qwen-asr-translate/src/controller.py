@@ -8,6 +8,7 @@ import queue
 from typing import Optional, Callable
 from pathlib import Path
 import numpy as np
+import torch
 
 from audio_manager import AudioManager
 from ai_controller import AIController
@@ -39,6 +40,19 @@ class AppController:
         self.target_lang = "zh"
         self.use_speaker_diarization = False
         self.bilingual_mode = True
+        
+        # 1. 智能偵測：一開機就睇吓有冇 GPU
+        self.has_gpu = torch.cuda.is_available()
+        
+        # 2. 自動預設：有 GPU 就預設用 Full (fp16)，冇就用 Fast (q4)
+        self.use_full_model = self.has_gpu 
+        
+        # 3. 根據預設值設定目標模型名稱
+        self.tgt_model_name = "translategemma:4b-it-fp16" if self.use_full_model else "translategemma:4b-it-q4_K_M"
+        
+        print(f"🔍 [Auto-Detect] GPU Available: {self.has_gpu}")
+        print(f"🚀 [Auto-Set] Default Model: {self.tgt_model_name}")
+            
         
         # 字幕歷史
         self.subtitles = []
@@ -78,7 +92,18 @@ class AppController:
             self.ai_ctrl.use_speaker_diarization = settings["diarization"]
         if "bilingual" in settings:
             self.bilingual_mode = settings["bilingual"]
-    
+            
+        # 👇 新增：接收 UI 傳來嘅選項，並即時改寫 Ollama 請求嘅模型名稱
+        if "use_full_model" in settings:
+            # 用家嘅手動選擇會覆蓋自動偵測嘅結果
+            self.use_full_model = settings["use_full_model"]
+            self.tgt_model_name = "translategemma:4b-it-fp16" if self.use_full_model else "translategemma:4b-it-q4_K_M"
+            
+            # 即時通知翻譯引擎換模型
+            if hasattr(self.ai_ctrl, 'translate_engine') and self.ai_ctrl.translate_engine:
+                self.ai_ctrl.translate_engine.model_name = self.tgt_model_name
+                print(f"🔄 [Manual Override] Switched to: {self.tgt_model_name}")
+                
     def start_recording(self, device_index: Optional[int] = None) -> bool:
         """開始錄音"""
         if self.is_recording:

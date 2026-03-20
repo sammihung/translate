@@ -75,7 +75,11 @@ class App(ctk.CTk):
         # 更新設備列表
         devices = self.controller.get_audio_devices()
         self.ui.set_device_list(devices)
+        self.ui.use_full_model_var.set(self.controller.use_full_model)
         
+        # 如果冇 GPU，我哋仲可以將個 Checkbox 變灰或者加個警告字眼
+        if not self.controller.has_gpu:
+            print("⚠️ Note: No GPU detected, Full Model might be very slow.")
         # 啟動引擎載入
         self.ui.set_status("[LOADING] 正在載入引擎...", "#f59e0b")
         

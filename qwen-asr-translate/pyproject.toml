@@ -3,7 +3,7 @@ name = "qwen-asr-translate"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "customtkinter>=5.2.2",
     "numpy>=2.4.3",
@@ -13,7 +13,10 @@ dependencies = [
     "qwen-asr>=0.0.6",
     "requests>=2.32.5",
     "silero-vad>=6.2.1",
+    "torch>=2.10.0",
+    "torchaudio>=2.10.0",
     "torchcodec>=0.10.0",
+    "torchvision>=0.25.0",
     "uuid>=1.30",
 ]
 
@@ -21,3 +24,6 @@ dependencies = [
 members = [
     "myproject",
 ]
+
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cu121"
