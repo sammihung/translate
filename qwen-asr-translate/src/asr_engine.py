@@ -260,94 +260,68 @@ class QwenASREngine:
 
 
 class TranslationEngine:
-    """翻譯引擎 - 使用 Qwen 多語言模型"""
+    """翻譯引擎 - 改用 NLLB 多語言模型 (支援中英日韓互譯)"""
     
-    def __init__(self, source_lang: str = "zh", target_lang: str = "en"):
-        """
-        初始化翻譯引擎
-        
-        Args:
-            source_lang: 來源語言 (ignored for multilingual model)
-            target_lang: 目標語言
-        """
+    def __init__(self, source_lang: str = "auto", target_lang: str = "zh"):
         self.source_lang = source_lang
         self.target_lang = target_lang
         self.model = None
         self.tokenizer = None
         self.loaded = False
         
-        # 使用多語言翻譯模型 - NLLB 支持 200+ 語言
-        # 或使用 Helsinki-NLP 的 zh-en 模型
-        if target_lang == "en":
-            self.model_name = "Helsinki-NLP/opus-mt-zh-en"
-        elif target_lang == "zh":
-            self.model_name = "Helsinki-NLP/opus-mt-en-zh"
-        else:
-            # 對於其他語言，使用 NLLB 模型
-            self.model_name = f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}" if source_lang != "auto" else None
+        # 使用 NLLB 600M 模型，一隻模型支援所有語言，唔使再左換右換
+        self.model_name = "facebook/nllb-200-distilled-600M"
+        
+        # NLLB 語言代碼對應表
+        self.lang_map = {
+            "zh": "zho_Hant", # 繁體中文
+            "en": "eng_Latn", # 英文
+            "ja": "jpn_Jpan", # 日文
+            "ko": "kor_Hang"  # 韓文
+        }
     
     def load_model(self):
-        """載入翻譯模型"""
+        """載入多語言翻譯模型"""
         if self.loaded:
             return
             
-        if not self.model_name:
-            print(f"Translation model not set (source={self.source_lang}, target={self.target_lang})")
-            return
-            
         try:
-            from transformers import MarianMTModel, MarianTokenizer
+            from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
             
-            print(f"Loading translation model: {self.model_name}...")
-            self.tokenizer = MarianTokenizer.from_pretrained(self.model_name)
-            self.model = MarianMTModel.from_pretrained(self.model_name)
+            print(f"Loading multilingual translation model: {self.model_name}...")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
             self.loaded = True
-            print(f"[OK] Translation model loaded")
+            print(f"[OK] Translation model loaded (NLLB)")
             
         except Exception as e:
             print(f"[WARN] Translation model load failed: {e}")
-            # 嘗試回退到 zh-en 模型
-            if self.target_lang == "en" and self.model_name != "Helsinki-NLP/opus-mt-zh-en":
-                print("Trying fallback to zh-en model...")
-                try:
-                    self.model_name = "Helsinki-NLP/opus-mt-zh-en"
-                    from transformers import MarianMTModel, MarianTokenizer
-                    self.tokenizer = MarianTokenizer.from_pretrained(self.model_name)
-                    self.model = MarianMTModel.from_pretrained(self.model_name)
-                    self.loaded = True
-                    print(f"[OK] Translation model loaded (fallback)")
-                except:
-                    pass
             self.model = None
     
     def translate(self, text: str) -> str:
-        """
-        翻譯文字
-        
-        Args:
-            text: 要翻譯的文字
+        """翻譯文字"""
+        if not text.strip() or self.model is None or self.tokenizer is None:
+            return text
             
-        Returns:
-            翻譯後的文字
-        """
-        if not text.strip():
-            return ""
-        
-        if self.model is None or self.tokenizer is None:
-            self.load_model()
-        
-        if self.model is None or self.tokenizer is None:
-            return text  # 返回原文
-        
         try:
             import torch
+            
+            # 獲取目標語言嘅 NLLB 代碼，預設為繁體中文
+            tgt_lang_code = self.lang_map.get(self.target_lang, "zho_Hant")
             
             # Tokenize
             inputs = self.tokenizer(text, return_tensors="pt", padding=True)
             
             # 翻譯
             with torch.no_grad():
-                translated = self.model.generate(**inputs)
+                # 喺度加上 pad_token_id 嚟消除煩人嘅警告
+                # 並使用 forced_bos_token_id 強制輸出你選擇嘅目標語言
+                translated = self.model.generate(
+                    **inputs,
+                    forced_bos_token_id=self.tokenizer.lang_code_to_id[tgt_lang_code],
+                    pad_token_id=self.tokenizer.eos_token_id, 
+                    max_length=128
+                )
             
             # 解碼
             result = self.tokenizer.decode(translated[0], skip_special_tokens=True)
@@ -356,8 +330,7 @@ class TranslationEngine:
             
         except Exception as e:
             print(f"翻譯錯誤：{e}")
-            return text  # 返回原文
-
+            return text
 
 class SubtitleGenerator:
     """雙語字幕生成器"""
