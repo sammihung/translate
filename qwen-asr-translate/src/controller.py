@@ -704,11 +704,14 @@ class AppController:
                     logger.info(f"清理前翻譯緩衝區 ({len(self.translation_buffer)} 句)...")
                     # 可以選擇快速翻譯或者直接丟棄
             
-            # 釋放 GPU 記憶體
+            # 🧹 深度記憶體回收機制
             if self.has_gpu and torch.cuda.is_available():
                 try:
+                    import gc
+                    gc.collect()  # 強制 Python GC 回收引用
                     torch.cuda.empty_cache()
-                    logger.info("GPU 記憶體已釋放")
+                    torch.cuda.ipc_collect()  # 清理跨進程記憶體
+                    logger.info("GPU 記憶體已深度釋放 (gc.collect + empty_cache + ipc_collect)")
                 except Exception as e:
                     logger.error(f"GPU 記憶體釋放失敗：{e}", exc_info=True)
             
