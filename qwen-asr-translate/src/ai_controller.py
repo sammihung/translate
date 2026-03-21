@@ -50,8 +50,10 @@ class AIController:
             
             try:
                 from asr_engine import QwenASREngine
-                self.asr_engine = QwenASREngine(model_name=asr_model, device=device)
-                self.asr_engine.load_model()
+                # 🔧 FIX: 使用臨時變數，載入成功後才替換（避免 Race Condition）
+                new_asr = QwenASREngine(model_name=asr_model, device=device)
+                new_asr.load_model()
+                self.asr_engine = new_asr  # 載入成功後才替換舊引擎
                 logger.info("ASR 模型載入完成")
             except Exception as e:
                 logger.error(f"ASR 模型載入失敗：{e}", exc_info=True)

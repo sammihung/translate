@@ -193,11 +193,9 @@ class QwenASREngine:
         Returns:
             轉錄文字
         """
-        if self.model is None:
-            self.load_model()
-        
-        if self.model is None:
-            logger.error("ASR 模型未載入")
+        # 🔧 FIX: 禁止錄音時強行載入模型（避免 Race Condition）
+        if self.model is None or not self.loaded:
+            logger.warning("ASR 模型正在背景載入中，暫時略過此段語音...")
             return ""
         
         try:

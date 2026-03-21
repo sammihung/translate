@@ -317,12 +317,12 @@ class MainUI(ctk.CTkFrame):
     def set_status(self, text: str, color: str = None):
         def _update():
             self.status_indicator.configure(text=text, text_color=color if color else self.colors["text_muted"])
-            self.after(0, _update)
+        self.after(0, _update)
 
     def enable_record_button(self, enabled: bool):
         def _update():
             self.record_btn.configure(state="normal" if enabled else "disabled")
-            self.after(0, _update)
+        self.after(0, _update)
 
     def get_selected_device(self) -> str:
         return self.device_var.get()
@@ -376,7 +376,7 @@ class MainUI(ctk.CTkFrame):
             else:
                 self.record_btn.configure(text="🎤", fg_color=self.colors["danger"], hover_color=self.colors["danger_hover"])
                 self.record_status_label.configure(text="PAUSED", text_color=self.colors["text_muted"])
-            self.after(0, _update)
+        self.after(0, _update)
     
     def add_chat_bubble(self, speaker_name: str, original: str, translated: str, speaker_id: int = 1) -> str:
         bubble_id = str(uuid.uuid4())
@@ -406,7 +406,7 @@ class MainUI(ctk.CTkFrame):
                 if oldest_id in self.chat_bubbles: 
                     del self.chat_bubbles[oldest_id]
             self.chat_scroll._parent_canvas.yview_moveto(1.0)
-            self.after(0, _update)
+        self.after(0, _update)
         return bubble_id
     
     def update_chat_bubble(self, bubble_id: str, new_translated: str) -> None:
@@ -414,7 +414,7 @@ class MainUI(ctk.CTkFrame):
             if hasattr(self, 'chat_bubbles') and bubble_id in self.chat_bubbles:
                 self.chat_bubbles[bubble_id].configure(text=new_translated)
                 self.chat_scroll._parent_canvas.yview_moveto(1.0)
-            self.after(0, _update)
+        self.after(0, _update)
     
     def ask_open_audio_file(self) -> Optional[str]:
         fp = filedialog.askopenfilename(title="選擇音訊/影片檔案", 
