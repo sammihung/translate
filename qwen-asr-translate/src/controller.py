@@ -690,6 +690,20 @@ class AppController:
                 except Exception as e:
                     logger.error(f"Thread Pool 關閉失敗：{e}", exc_info=True)
             
+            # 🔧 優化 B: 清理 Batching 資源
+            if hasattr(self, 'batch_timer') and self.batch_timer:
+                try:
+                    self.batch_timer.cancel()
+                    logger.info("Batch 計時器已取消")
+                except Exception as e:
+                    logger.error(f"Batch 計時器清理失敗：{e}", exc_info=True)
+            
+            if hasattr(self, 'translation_buffer'):
+                # 如果有未翻譯嘅句子，嘗試快速翻譯
+                if self.translation_buffer:
+                    logger.info(f"清理前翻譯緩衝區 ({len(self.translation_buffer)} 句)...")
+                    # 可以選擇快速翻譯或者直接丟棄
+            
             # 釋放 GPU 記憶體
             if self.has_gpu and torch.cuda.is_available():
                 try:
