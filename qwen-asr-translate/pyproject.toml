@@ -1,23 +1,68 @@
 [project]
 name = "qwen-asr-translate"
 version = "0.1.0"
-description = "Add your description here"
+description = "Real-time ASR translation with Qwen3 and Ollama"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
+
 dependencies = [
-    "customtkinter>=5.2.2",
-    "numpy>=2.4.3",
-    "onnxruntime>=1.24.4",
-    "pyannote-audio>=4.0.4",
-    "pyaudio>=0.2.14",
+    # Core ML/Audio
+    "numpy>=1.24.0",
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "librosa>=0.10.0",
+    "soundfile>=0.12.1",
+    
+    # ASR Model
     "qwen-asr>=0.0.6",
-    "requests>=2.32.5",
-    "silero-vad>=6.2.1",
-    "torch>=2.10.0",
-    "torchaudio>=2.10.0",
-    "torchcodec>=0.10.0",
-    "torchvision>=0.25.0",
-    "uuid>=1.30",
+    
+    # VAD
+    "onnxruntime>=1.16.0",
+    "silero-vad>=0.4.0",
+    
+    # Speaker Diarization (Optional)
+    "pyannote-audio>=3.0.0",
+    
+    # Translation
+    "requests>=2.31.0",
+    
+    # GUI
+    "customtkinter>=5.2.0",
+    "Pillow>=10.0.0",
+    
+    # Audio I/O
+    "pyaudio>=0.2.13",
+    
+    # Utilities
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Type Checking
+    "mypy>=1.5.0",
+    "types-requests>=2.31.0",
+    
+    # Code Quality
+    "ruff>=0.1.0",
+    "black>=23.0.0",
+    
+    # Testing
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    
+    # Pre-commit
+    "pre-commit>=3.5.0",
+    
+    # Logging (Optional Enhancement)
+    "loguru>=0.7.0",
+    "python-json-logger>=2.0.0",
+]
+
+gpu = [
+    # GPU Support
+    "torch>=2.0.0+cu118",
+    "torchaudio>=2.0.0+cu118",
 ]
 
 [tool.uv.workspace]
@@ -27,3 +72,59 @@ members = [
 
 [[tool.uv.index]]
 url = "https://download.pytorch.org/whl/cu121"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pyaudio.*",
+    "customtkinter.*",
+    "librosa.*",
+    "qwen_asr.*",
+    "pyannote.*",
+    "silero_vad.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --cov=src --cov-report=html"

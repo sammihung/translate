@@ -58,3 +58,7 @@ BOOTSTRAP.md
 # UI Mockups (not part of actual application)
 ui_preview.html
 INSTALL_GUIDE.html
+
+# Documentation (optional)
+OPTIMIZATION_GUIDE.md
+OPTIMIZATIONS.md

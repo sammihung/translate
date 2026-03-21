@@ -3,6 +3,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from datetime import datetime
 import uuid
+from typing import Optional, Callable, Dict, Any, List
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 class MainUI(ctk.CTkFrame):
     def __init__(self, master, controller=None, **kwargs):
