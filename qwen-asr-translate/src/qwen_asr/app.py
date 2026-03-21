@@ -165,7 +165,8 @@ class App(ctk.CTk):
                 messagebox.showwarning("警告", "引擎尚未完全載入，請稍候...")
                 return
             
-            device_name: str = self.ui.device_var.get()
+            # 🔧 FIX: 使用安全的方法獲取設備名稱，避免 StringVar 不同步
+            device_name: str = self.ui.get_selected_device()
             device_index: Optional[int] = self.controller.audio_mgr.parse_device_index(device_name)
             
             if self.controller.start_recording(device_index):

@@ -335,7 +335,8 @@ class MainUI(ctk.CTkFrame):
         self.record_btn.configure(state="normal" if enabled else "disabled")
 
     def get_selected_device(self) -> str:
-        return self.device_var.get()
+        # 🔧 FIX: 強制從 ComboBox 元件抓取目前顯示的文字，避免 StringVar 不同步的問題
+        return self.device_combo.get()
 
     def get_selected_languages(self):
         return self.src_lang_var.get(), self.tgt_lang_var.get()

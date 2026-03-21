@@ -10,6 +10,7 @@ Audio Manager - 音訊設備管理與錄音
 
 import pyaudio
 import numpy as np
+import re
 from typing import List, Optional, Callable
 import threading
 from logging_config import get_logger
@@ -52,7 +53,7 @@ class AudioManager:
     
     def parse_device_index(self, device_string: str) -> Optional[int]:
         """
-        從 UI 傳入嘅設備字串中解析出設備 Index
+        使用正規表示式精準提取設備 ID
         
         例如輸入："麥克風 (Realtek(R) Audio) [2]" -> 回傳：2
         
@@ -62,15 +63,28 @@ class AudioManager:
         Returns:
             設備 index (int)，如果係預設設備或解析失敗則返回 None
         """
-        if not device_string or "預設" in device_string or "Default" in device_string:
+        if not device_string:
+            return None
+        
+        logger.info(f"準備解析設備字串：'{device_string}'")
+        
+        # 檢查是否為預設選項
+        if "預設" in device_string or "Default" in device_string or "請先" in device_string:
+            logger.info("偵測到預設選項，使用系統預設麥克風")
             return None
         
         try:
-            # 用 split 方法攔出中括號 [ ] 入面嘅數字
-            index_str = device_string.split("[")[-1].split("]")[0]
-            return int(index_str)
-        except (IndexError, ValueError):
-            # 如果解析失敗 (例如字串格式唔啱)，就 fallback 去預設設備
+            # 使用 Regex 尋找字串最後面的 [數字]
+            match = re.search(r'\[(\d+)\]\s*$', device_string.strip())
+            if match:
+                index = int(match.group(1))
+                logger.info(f"✅ 成功解析出設備 ID: {index}")
+                return index
+            else:
+                logger.warning(f"❌ 無法從 '{device_string}' 找到 [數字] 格式，退回預設設備")
+                return None
+        except Exception as e:
+            logger.error(f"解析設備 ID 時發生錯誤：{e}")
             return None
     
     def get_audio_devices(self) -> List[str]:
