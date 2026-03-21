@@ -57,6 +57,12 @@ class MainUI(ctk.CTkFrame):
         }
         self.configure(fg_color=self.colors["bg_dark"])
         
+        # Font Size Configuration
+        self.font_sizes = {
+            "original": 13,  # 原文預設大小
+            "translated": 16  # 譯文預設大小
+        }
+        
         # 🔧 FIX 2: Complete 3-Tier Model Maps (CORRECT Qwen3-ASR paths)
         self.asr_repo_map = {
             "⚡ Qwen3-ASR-0.6B (極速版)": "Qwen/Qwen3-ASR-0.6B",
@@ -157,6 +163,15 @@ class MainUI(ctk.CTkFrame):
             corner_radius=8, command=self.toggle_floating_mode
         )
         self.floating_btn.grid(row=4, column=0, padx=10, pady=3, sticky="ew")
+
+        # Font Size Control Button
+        self.font_btn = ctk.CTkButton(
+            self.sidebar, text="🔤 文字大小：標準", font=ctk.CTkFont(size=14), 
+            fg_color=self.colors["bg_panel"], text_color=self.colors["text_light"],
+            hover_color=self.colors["primary"], anchor="w", height=45, 
+            corner_radius=8, command=self.cycle_font_size
+        )
+        self.font_btn.grid(row=5, column=0, padx=10, pady=3, sticky="ew")
 
         self.status_indicator = ctk.CTkLabel(
             self.sidebar, text="🟢 系統就緒", font=ctk.CTkFont(size=11), 
@@ -435,11 +450,11 @@ class MainUI(ctk.CTkFrame):
                 ctk.CTkLabel(header, text=speaker_name, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_color).pack(side=side_align)
                 ctk.CTkLabel(header, text=datetime.now().strftime("%H:%M:%S"), font=ctk.CTkFont(family="Courier", size=10), text_color=self.colors["text_muted"]).pack(side=side_align, padx=10)
                 
-                # 建立原文（主窗口）
-                ctk.CTkLabel(bubble, text=original, font=ctk.CTkFont(size=13, slant="italic"), text_color=self.colors["text_muted"], wraplength=500, justify="left").pack(anchor=align, padx=10, pady=(0, 2))
+                # 建立原文（主窗口）- 使用動態字體大小
+                ctk.CTkLabel(bubble, text=original, font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"), text_color=self.colors["text_muted"], wraplength=500, justify="left").pack(anchor=align, padx=10, pady=(0, 2))
                 
-                # 建立譯文（主窗口）
-                trans_label = ctk.CTkLabel(bubble, text=translated, font=ctk.CTkFont(size=16, weight="bold"), text_color=self.colors["text_light"], wraplength=500, justify="left")
+                # 建立譯文（主窗口）- 使用動態字體大小
+                trans_label = ctk.CTkLabel(bubble, text=translated, font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"), text_color=self.colors["text_light"], wraplength=500, justify="left")
                 trans_label.pack(anchor=align, padx=10, pady=(0, 5))
                 logger.info(f"💬 [UI_ADD_BUBBLE] 譯文標籤已建立")
                 
@@ -599,6 +614,80 @@ class MainUI(ctk.CTkFrame):
         except Exception as e:
             logger.error(f"關閉浮動窗口失敗：{e}", exc_info=True)
     
+    # ==========================================
+    # Font Size Control
+    # ==========================================
+    def cycle_font_size(self) -> None:
+        """Cycle Through Font Size Presets"""
+        # Define presets
+        presets = [
+            {"original": 11, "translated": 14, "label": "🔤 文字大小：小"},
+            {"original": 13, "translated": 16, "label": "🔤 文字大小：標準"},
+            {"original": 15, "translated": 18, "label": "🔤 文字大小：大"},
+            {"original": 18, "translated": 22, "label": "🔤 文字大小：超大"}
+        ]
+        
+        # Find current preset index
+        current_idx = 1  # Default to standard
+        for idx, preset in enumerate(presets):
+            if preset["original"] == self.font_sizes["original"] and preset["translated"] == self.font_sizes["translated"]:
+                current_idx = idx
+                break
+        
+        # Move to next preset (cycle)
+        next_idx = (current_idx + 1) % len(presets)
+        next_preset = presets[next_idx]
+        
+        # Update font sizes
+        self.font_sizes["original"] = next_preset["original"]
+        self.font_sizes["translated"] = next_preset["translated"]
+        
+        # Update button text
+        self.font_btn.configure(text=next_preset["label"])
+        
+        # Refresh all existing bubbles
+        self._refresh_all_bubbles()
+        
+        logger.info(f"🔤 文字大小已更改：原文={self.font_sizes['original']}px, 譯文={self.font_sizes['translated']}px")
+    
+    def _refresh_all_bubbles(self) -> None:
+        """Refresh All Bubbles with New Font Sizes"""
+        def _update():
+            try:
+                # Refresh main window bubbles
+                if hasattr(self, 'chat_bubbles'):
+                    for bubble_id, trans_label in self.chat_bubbles.items():
+                        # Update translated text font
+                        trans_label.configure(font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"))
+                        
+                        # Update original text font (need to find the parent bubble)
+                        if bubble_id in self.bubble_containers:
+                            bubble = self.bubble_containers[bubble_id]
+                            for widget in bubble.winfo_children():
+                                if isinstance(widget, ctk.CTkLabel):
+                                    current_text = widget.cget("text")
+                                    # Check if this is original text (italic)
+                                    if widget.cget("font") and "italic" in str(widget.cget("font")):
+                                        widget.configure(font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"))
+                
+                # Refresh floating window bubbles
+                if self.floating_mode and hasattr(self, 'floating_chat_bubbles'):
+                    for bubble_id, trans_label in self.floating_chat_bubbles.items():
+                        trans_label.configure(font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"))
+                        
+                        if bubble_id in self.floating_bubble_containers:
+                            bubble = self.floating_bubble_containers[bubble_id]
+                            for widget in bubble.winfo_children():
+                                if isinstance(widget, ctk.CTkLabel):
+                                    if widget.cget("font") and "italic" in str(widget.cget("font")):
+                                        widget.configure(font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"))
+                
+                logger.info(f"✅ 已刷新所有氣泡字體大小")
+            except Exception as e:
+                logger.error(f"❌ 刷新氣泡失敗：{e}", exc_info=True)
+        
+        self.after(0, _update)
+    
     def _add_floating_bubble_with_id(self, bubble_id: str, speaker_name: str, original: str, translated: str, speaker_id: int = 1) -> None:
         """Add bubble to floating window with shared bubble_id (internal use)"""
         if not self.floating_mode or not self.floating_window:
@@ -623,19 +712,19 @@ class MainUI(ctk.CTkFrame):
                 bubble.pack(anchor=align, ipadx=8, ipady=8)
                 logger.debug(f"🪟 [FLOATING_BUBBLE] 氣泡已建立")
                 
-                # Original text (smaller font)
+                # Original text (smaller font) - 使用動態字體大小
                 ctk.CTkLabel(
                     bubble, text=original, 
-                    font=ctk.CTkFont(size=11, slant="italic"), 
+                    font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"), 
                     text_color=self.colors["text_muted"], 
                     wraplength=600, justify="left"
                 ).pack(anchor=align, padx=8, pady=(0, 2))
                 logger.debug(f"🪟 [FLOATING_BUBBLE] 原文已加入")
                 
-                # Translated text (larger, bold)
+                # Translated text (larger, bold) - 使用動態字體大小
                 trans_label = ctk.CTkLabel(
                     bubble, text=translated, 
-                    font=ctk.CTkFont(size=14, weight="bold"), 
+                    font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"), 
                     text_color=self.colors["text_light"], 
                     wraplength=600, justify="left"
                 )
