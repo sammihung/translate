@@ -682,6 +682,14 @@ class AppController:
             except Exception as e:
                 logger.error(f"AIController 清理失敗：{e}", exc_info=True)
             
+            # 🔧 優化 2: 安全關閉 ThreadPool
+            if hasattr(self, 'translate_pool'):
+                try:
+                    self.translate_pool.shutdown(wait=False)
+                    logger.info("Thread Pool 已關閉")
+                except Exception as e:
+                    logger.error(f"Thread Pool 關閉失敗：{e}", exc_info=True)
+            
             # 釋放 GPU 記憶體
             if self.has_gpu and torch.cuda.is_available():
                 try:
