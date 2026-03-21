@@ -44,8 +44,7 @@ echo.
 echo [SUCCESS] Everything is ready! Launching QwenASR...
 echo.
 
-:: Start the Python application
-call .venv\Scripts\activate
-python src\app.py
+:: 🔴 關鍵更新：使用 uv run 自動處理虛擬環境，並指向新的專案入口
+uv run main.py
 
 pause

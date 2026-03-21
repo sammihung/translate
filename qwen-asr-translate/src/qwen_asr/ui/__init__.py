@@ -1,1 +1,9 @@
-"""UI 模組：視窗、元件、彈出視窗"""
+"""
+UI 層 - 使用者介面
+
+CustomTkinter 專業介面
+"""
+
+from qwen_asr.ui.ui import MainUI
+
+__all__ = ["MainUI"]

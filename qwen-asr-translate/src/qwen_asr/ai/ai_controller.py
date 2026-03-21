@@ -6,7 +6,7 @@ AI Controller - AI 模型管理與推理
 from typing import Optional, Tuple, List, Callable
 import threading
 import numpy as np
-from logging_config import get_logger
+from qwen_asr.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 

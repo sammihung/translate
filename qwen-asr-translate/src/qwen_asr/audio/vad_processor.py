@@ -7,7 +7,7 @@ import numpy as np
 from typing import List, Tuple, Optional
 from pathlib import Path
 import onnxruntime as ort
-from logging_config import get_logger
+from qwen_asr.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 

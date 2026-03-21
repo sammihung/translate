@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from tkinter import messagebox
 
-from ui import MainUI
-from controller import AppController
-from logging_config import setup_logging, get_logger
+from qwen_asr.ui.ui import MainUI
+from qwen_asr.domain.controller import AppController
+from qwen_asr.core.logging_config import setup_logging, get_logger
 import logging
 # 抑制 Transformers 過度輸出
 import os

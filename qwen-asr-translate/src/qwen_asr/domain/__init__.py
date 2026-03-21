@@ -1,1 +1,9 @@
-"""業務邏輯模組：調控各層互動"""
+"""
+Domain 層 - 業務邏輯調控
+
+負責連接 UI 層同 AI/Audio 層
+"""
+
+from qwen_asr.domain.controller import AppController
+
+__all__ = ["AppController"]

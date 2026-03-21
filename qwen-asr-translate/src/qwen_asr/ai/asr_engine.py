@@ -9,7 +9,7 @@ from typing import Optional, List, Tuple, Dict, Any
 import torch
 import requests
 import json
-from logging_config import get_logger
+from qwen_asr.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
