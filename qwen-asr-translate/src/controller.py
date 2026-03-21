@@ -14,6 +14,14 @@ import torch
 from audio_manager import AudioManager
 from ai_controller import AIController
 from logging_config import get_logger
+from model_registry import (
+    PerformanceMode,
+    PerformanceTier,
+    get_performance_tier,
+    get_all_tiers,
+    get_tier_by_display_name,
+    AVAILABLE_MODELS
+)
 
 logger = get_logger(__name__)
 
@@ -66,6 +74,13 @@ class AppController:
         # 生產者 - 消費者模式 - 設定 maxsize 防止 OOM
         self.audio_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=10)
         
+        # 效能模式設定 (預設：平衡版)
+        self.performance_mode: PerformanceMode = PerformanceMode.BALANCED
+        self.current_tier: Optional[PerformanceTier] = None
+        
+        # 自動偵測並設定預設效能模式
+        self._auto_detect_performance_mode()
+        
         # 回調函數
         self.on_subtitle_update: Optional[Callable[[str, str, int], str]] = None
         self.on_translation_complete: Optional[Callable[[str, str], None]] = None
@@ -80,14 +95,19 @@ class AppController:
         # 智能偵測：一開機就睇吓有冇 GPU
         self.has_gpu: bool = torch.cuda.is_available()
         
-        # 自動預設：有 GPU 就預設用 Full (fp16)，冇就用 Fast (q4)
-        self.use_full_model: bool = self.has_gpu
-        
-        # 根據預設值設定目標模型名稱
-        self.tgt_model_name: str = "translategemma:4b-it-fp16" if self.use_full_model else "translategemma:4b-it-q4_K_M"
+        # 檢測 GPU VRAM (如果有的話)
+        self.gpu_vram_gb: float = 0.0
+        if self.has_gpu and torch.cuda.is_available():
+            try:
+                # 獲取 GPU 記憶體總量 (單位：bytes)
+                vram_bytes = torch.cuda.get_device_properties(0).total_memory
+                self.gpu_vram_gb = vram_bytes / (1024 ** 3)  # 轉換為 GB
+                logger.info(f"檢測到 GPU VRAM: {self.gpu_vram_gb:.2f} GB")
+            except Exception as e:
+                logger.warning(f"無法檢測 GPU VRAM: {e}")
         
         logger.info(f"GPU Available: {self.has_gpu}")
-        logger.info(f"Default Model: {self.tgt_model_name}")
+        logger.info(f"初始效能模式：{self.performance_mode.value}")
             
         # 字幕歷史
         self.subtitles: List[Dict[str, Any]] = []
@@ -95,24 +115,111 @@ class AppController:
         self.src_lang: str = "auto"
         self.tgt_lang: str = "zh"
     
-    def initialize_engines(self, progress_callback: Optional[Callable[[str], None]] = None) -> bool:
-        """初始化 AI 引擎"""
+    def _auto_detect_performance_mode(self) -> None:
+        """根據硬體自動偵測並設定效能模式"""
         try:
-            # 根據偵測結果決定要用邊個 ASR 模型
-            asr_model: str = "Qwen/Qwen3-ASR-1.7B" if self.has_gpu else "Qwen/Qwen3-ASR-0.6B"
-            device: str = "cuda" if self.has_gpu else "cpu"
+            # 檢測系統 RAM (簡化版本，實際可以用 psutil)
+            import psutil
+            total_ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+        except ImportError:
+            total_ram_gb = 16.0  # 預設值
+            logger.warning("無法檢測系統 RAM，使用預設值 16GB")
+        
+        # 自動配對邏輯
+        if self.has_gpu and self.gpu_vram_gb >= 12.0:
+            # 12GB+ VRAM -> 滿血版
+            self.performance_mode = PerformanceMode.FULL
+            logger.info("自動設定：🩸 滿血版 (高階 GPU)")
+        elif self.has_gpu and self.gpu_vram_gb >= 4.0:
+            # 4-12GB VRAM -> 平衡版
+            self.performance_mode = PerformanceMode.BALANCED
+            logger.info("自動設定：⚖️ 平衡版 (入門 GPU)")
+        elif total_ram_gb >= 16.0:
+            # 16GB+ RAM, 無 GPU -> 平衡版 (CPU 模式)
+            self.performance_mode = PerformanceMode.BALANCED
+            logger.info("自動設定：⚖️ 平衡版 (大 RAM)")
+        else:
+            # < 16GB RAM -> 極速版
+            self.performance_mode = PerformanceMode.FAST
+            logger.info("自動設定：⚡ 極速版 (低階硬體)")
+        
+        # 載入對應的配置
+        self.current_tier = get_performance_tier(self.performance_mode)
+        logger.info(f"已載入配置：{self.current_tier.display_name}")
+    
+    def set_performance_mode(self, mode: PerformanceMode) -> None:
+        """
+        手動設定效能模式
+        
+        Args:
+            mode: 效能模式 (FAST/BALANCED/FULL)
+        """
+        if self.performance_mode == mode:
+            logger.debug(f"效能模式已經是 {mode.value}")
+            return
+        
+        self.performance_mode = mode
+        self.current_tier = get_performance_tier(mode)
+        
+        logger.info(f"效能模式已切換：{self.current_tier.display_name}")
+        logger.info(f"  ASR: {self.current_tier.asr.name} ({self.current_tier.asr.precision})")
+        logger.info(f"  翻譯：{self.current_tier.translation.name} ({self.current_tier.translation.precision})")
+        
+        # 如果需要，可以觸發模型重新載入
+        # self._reload_models_with_new_config()
+    
+    def get_performance_modes(self) -> list[str]:
+        """獲取所有效能模式的顯示名稱 (用於 UI)"""
+        return get_all_tiers()[0].__class__  # 返回所有 tier 的顯示名稱
+    
+    def get_current_model_config(self) -> tuple[str, str]:
+        """
+        獲取當前效能模式對應的模型配置
+        
+        Returns:
+            (asr_repo, translation_model_tag)
+        """
+        if self.current_tier is None:
+            # 如果未設定，使用預設
+            self.current_tier = get_performance_tier(self.performance_mode)
+        
+        return (
+            self.current_tier.asr.repo,
+            self.current_tier.translation.model_tag
+        )
+    
+    def initialize_engines(self, progress_callback: Optional[Callable[[str], None]] = None) -> bool:
+        """初始化 AI 引擎 - 使用效能模式配置"""
+        try:
+            # 獲取當前效能模式的模型配置
+            asr_repo, translation_tag = self.get_current_model_config()
             
-            logger.info(f"正在初始化引擎：{asr_model} on {device}")
+            # 根據效能模式決定設備
+            if self.performance_mode == PerformanceMode.FULL and self.has_gpu:
+                device = "cuda"
+            elif self.performance_mode == PerformanceMode.BALANCED and self.has_gpu:
+                device = "cuda"
+            else:
+                device = "cpu"
+            
+            logger.info(f"正在初始化引擎 (效能模式：{self.performance_mode.value})")
+            logger.info(f"  ASR: {asr_repo} ({device})")
+            logger.info(f"  翻譯：{translation_tag}")
+            
+            if progress_callback:
+                progress_callback(f"載入 {self.current_tier.display_name} 配置...")
             
             success: bool = self.ai_ctrl.load_all_models(
                 target_lang=self.target_lang,
-                asr_model=asr_model,
+                asr_model=asr_repo,
                 device=device,
                 progress_callback=progress_callback
             )
             
             if success:
                 logger.info("引擎初始化成功")
+                if progress_callback:
+                    progress_callback(f"[OK] {self.current_tier.display_name} 已就緒")
             else:
                 logger.error("引擎初始化失敗")
             
@@ -120,6 +227,8 @@ class AppController:
             
         except Exception as e:
             logger.error(f"引擎初始化失敗：{e}", exc_info=True)
+            if progress_callback:
+                progress_callback(f"[ERROR] 初始化失敗：{str(e)}")
             return False
     
     def get_audio_devices(self) -> List[str]:

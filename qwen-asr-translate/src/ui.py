@@ -328,20 +328,23 @@ class MainUI(ctk.CTkFrame):
     # 記得喺 ui.py 最頂部加入: import uuid
 
     def add_chat_bubble(self, speaker_name: str, original: str, translated: str, speaker_id: int = 1) -> str:
-        """新增對話氣泡，並回傳專屬的 bubble_id"""
+        """新增對話氣泡，並回傳專屬的 bubble_id，自動清理過舊氣泡防卡死"""
         import uuid
         bubble_id = str(uuid.uuid4())
         
         def _update(s_id=speaker_id, s_name=speaker_name, orig=original, trans=translated, b_id=bubble_id):
+            # 1. 初始化記錄字典與陣列 (加入 bubble_containers 記錄整個氣泡框)
             if not hasattr(self, 'chat_bubbles'):
                 self.chat_bubbles = {}
+                self.bubble_containers = {}  # 記錄最外層的 container，方便刪除
+                self.bubble_order = []       # 記錄氣泡出現的先後次序
                 
-            # 呢度已經全部改用 s_id，唔會再報錯
             if s_id == 1:
                 align, bubble_color, text_color = "w", "#1e293b", self.colors["primary"]
             else:
                 align, bubble_color, text_color = "e", "#064e3b", self.colors["success"]
 
+            # 創建容器
             container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
             container.pack(fill="x", pady=10, padx=10)
 
@@ -352,7 +355,6 @@ class MainUI(ctk.CTkFrame):
             header = ctk.CTkFrame(bubble, fg_color="transparent")
             header.pack(fill="x", padx=10, pady=(5, 5))
             
-            # 呢度都全部改用咗 s_id 同 s_name
             if s_id == 1:
                 ctk.CTkLabel(header, text=s_name, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_color).pack(side="left")
                 ctk.CTkLabel(header, text=time_str, font=ctk.CTkFont(family="Courier", size=10), text_color=self.colors["text_muted"]).pack(side="left", padx=10)
@@ -365,7 +367,26 @@ class MainUI(ctk.CTkFrame):
             trans_label = ctk.CTkLabel(bubble, text=trans, font=ctk.CTkFont(size=16, weight="bold"), text_color=self.colors["text_light"], wraplength=500, justify="left")
             trans_label.pack(anchor=align, padx=10, pady=(0, 5))
             
+            # 2. 儲存參考
             self.chat_bubbles[b_id] = trans_label
+            self.bubble_containers[b_id] = container
+            self.bubble_order.append(b_id)
+            
+            # 3. 🚨 核心修復：限制最大顯示數量 (例如保留最新 100 個)
+            MAX_BUBBLES = 100
+            if len(self.bubble_order) > MAX_BUBBLES:
+                # 攞出最舊嗰個氣泡嘅 ID
+                oldest_id = self.bubble_order.pop(0)
+                
+                # 從畫面上徹底銷毀並釋放記憶體
+                if oldest_id in self.bubble_containers:
+                    self.bubble_containers[oldest_id].destroy()
+                    del self.bubble_containers[oldest_id]
+                
+                if oldest_id in self.chat_bubbles:
+                    del self.chat_bubbles[oldest_id]
+            
+            # 畫面自動捲動到最底
             self.chat_scroll._parent_canvas.yview_moveto(1.0)
             
         self.after(0, _update)
