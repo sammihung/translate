@@ -50,6 +50,29 @@ class AudioManager:
         self.max_chunk_duration = max_duration
         logger.info(f"VAD 參數已更新：RMS={rms_threshold}, 靜音={silence_duration}s, 最大={max_duration}s")
     
+    def parse_device_index(self, device_string: str) -> Optional[int]:
+        """
+        從 UI 傳入嘅設備字串中解析出設備 Index
+        
+        例如輸入："麥克風 (Realtek(R) Audio) [2]" -> 回傳：2
+        
+        Args:
+            device_string: UI 設備字串 (格式："設備名稱 [index]")
+            
+        Returns:
+            設備 index (int)，如果係預設設備或解析失敗則返回 None
+        """
+        if not device_string or "預設" in device_string or "Default" in device_string:
+            return None
+        
+        try:
+            # 用 split 方法攔出中括號 [ ] 入面嘅數字
+            index_str = device_string.split("[")[-1].split("]")[0]
+            return int(index_str)
+        except (IndexError, ValueError):
+            # 如果解析失敗 (例如字串格式唔啱)，就 fallback 去預設設備
+            return None
+    
     def get_audio_devices(self) -> List[str]:
         """獲取所有可用音訊設備"""
         device_list: List[str] = []
