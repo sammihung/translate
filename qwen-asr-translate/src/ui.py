@@ -371,41 +371,17 @@ class MainUI(ctk.CTkFrame):
         self.after(0, _update)
         return bubble_id
     
-    def update_chat_bubble(self, bubble_id: str, new_translated: str):
+    def update_chat_bubble(self, bubble_id: str, new_translated: str) -> None:
         """根據 bubble_id 更新譯文內容"""
-        def _update():
+        def _update() -> None:
             if hasattr(self, 'chat_bubbles') and bubble_id in self.chat_bubbles:
+                # 找到對應的氣泡，只更新文字內容
                 self.chat_bubbles[bubble_id].configure(text=new_translated)
+                # 畫面自動捲動到最底
                 self.chat_scroll._parent_canvas.yview_moveto(1.0)
-        self.after(0, _update)
-        def _update():
-            if speaker_id == 1:
-                align, bubble_color, text_color = "w", "#1e293b", self.colors["primary"]
             else:
-                align, bubble_color, text_color = "e", "#064e3b", self.colors["success"]
-
-            container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
-            container.pack(fill="x", pady=10, padx=10)
-
-            bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=15)
-            bubble.pack(anchor=align, ipadx=10, ipady=10)
-
-            time_str = datetime.now().strftime("%H:%M:%S")
-            header = ctk.CTkFrame(bubble, fg_color="transparent")
-            header.pack(fill="x", padx=10, pady=(5, 5))
-            
-            if speaker_id == 1:
-                ctk.CTkLabel(header, text=speaker_name, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_color).pack(side="left")
-                ctk.CTkLabel(header, text=time_str, font=ctk.CTkFont(family="Courier", size=10), text_color=self.colors["text_muted"]).pack(side="left", padx=10)
-            else:
-                ctk.CTkLabel(header, text=speaker_name, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_color).pack(side="right")
-                ctk.CTkLabel(header, text=time_str, font=ctk.CTkFont(family="Courier", size=10), text_color=self.colors["text_muted"]).pack(side="right", padx=10)
-
-            ctk.CTkLabel(bubble, text=original, font=ctk.CTkFont(size=13, slant="italic"), text_color=self.colors["text_muted"], wraplength=500, justify="left").pack(anchor=align, padx=10, pady=(0, 2))
-            ctk.CTkLabel(bubble, text=translated, font=ctk.CTkFont(size=16, weight="bold"), text_color=self.colors["text_light"], wraplength=500, justify="left").pack(anchor=align, padx=10, pady=(0, 5))
-
-            self.chat_scroll._parent_canvas.yview_moveto(1.0)
-            
+                logger.warning(f"找不到 bubble_id: {bubble_id}")
+                
         self.after(0, _update)
     
     def _on_save_settings(self):

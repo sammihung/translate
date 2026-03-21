@@ -18,7 +18,7 @@ from tkinter import messagebox
 from ui import MainUI
 from controller import AppController
 from logging_config import setup_logging, get_logger
-
+import logging
 # 抑制 Transformers 過度輸出
 import os
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"

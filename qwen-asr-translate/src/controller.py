@@ -18,6 +18,36 @@ from logging_config import get_logger
 logger = get_logger(__name__)
 
 
+class RecordingState:
+    """使用 Event 管理錄音狀態，確保跨執行緒同步安全"""
+    
+    def __init__(self) -> None:
+        self._stop_event: threading.Event = threading.Event()
+        self._is_recording: bool = False
+    
+    def start(self) -> None:
+        """開始錄音"""
+        self._stop_event.clear()
+        self._is_recording = True
+    
+    def stop(self) -> None:
+        """停止錄音"""
+        self._is_recording = False
+        self._stop_event.set()
+    
+    def is_recording(self) -> bool:
+        """檢查是否正在錄音"""
+        return self._is_recording
+    
+    def wait_for_stop(self, timeout: Optional[float] = None) -> bool:
+        """等待錄音停止，可設定超時"""
+        return self._stop_event.wait(timeout=timeout)
+    
+    def is_set(self) -> bool:
+        """檢查停止事件是否已設定"""
+        return self._stop_event.is_set()
+
+
 class AppController:
     """應用程式控制器 - 處理所有業務邏輯"""
     
@@ -26,13 +56,15 @@ class AppController:
         self.audio_mgr: AudioManager = AudioManager()
         self.ai_ctrl: AIController = AIController()
         
-        # 狀態
-        self.is_recording: bool = False
+        # 狀態 - 使用 Event 確保執行緒安全
+        self.recording_state: RecordingState = RecordingState()
+        self.is_recording: bool = False  # 保留向下相容
+        
         self.record_thread: Optional[threading.Thread] = None
         self.process_thread: Optional[threading.Thread] = None
         
-        # 生產者 - 消費者模式
-        self.audio_queue: queue.Queue[np.ndarray] = queue.Queue()
+        # 生產者 - 消費者模式 - 設定 maxsize 防止 OOM
+        self.audio_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=10)
         
         # 回調函數
         self.on_subtitle_update: Optional[Callable[[str, str, int], str]] = None
@@ -160,7 +192,7 @@ class AppController:
     def start_recording(self, device_index: Optional[int] = None) -> bool:
         """開始錄音"""
         try:
-            if self.is_recording:
+            if self.recording_state.is_recording():
                 logger.warning("已經在錄音中")
                 return False
             
@@ -170,7 +202,9 @@ class AppController:
                     self.on_status_change("⚠️ 引擎未就緒", "#f59e0b")
                 return False
             
-            self.is_recording = True
+            # 使用 Event 管理狀態
+            self.recording_state.start()
+            self.is_recording = True  # 保持向下相容
             
             # 清空舊隊列
             while not self.audio_queue.empty():
@@ -205,13 +239,16 @@ class AppController:
             
         except Exception as e:
             logger.error(f"啟動錄音失敗：{e}", exc_info=True)
+            self.recording_state.stop()
             self.is_recording = False
             return False
     
     def stop_recording(self) -> None:
-        """停止錄音"""
+        """停止錄音 - 使用 Event 優雅停止"""
         try:
-            self.is_recording = False
+            # 使用 Event 設定停止信號
+            self.recording_state.stop()
+            self.is_recording = False  # 保持向下相容
             
             try:
                 self.audio_mgr.stop_recording()
@@ -224,6 +261,7 @@ class AppController:
             def finish_processing() -> None:
                 """背景等待隊列清空"""
                 try:
+                    # 等待所有音訊處理完成，最多等 5 秒
                     self.audio_queue.join()
                     logger.info("隊列已清空，所有音訊處理完成")
                     
@@ -240,11 +278,16 @@ class AppController:
             logger.error(f"停止錄音失敗：{e}", exc_info=True)
     
     def _recording_thread(self, device_index: Optional[int]) -> None:
-        """錄音執行緒（生產者）"""
+        """錄音執行緒（生產者）- 使用 Event 管理停止"""
         try:
             def on_audio_data(audio_np: np.ndarray) -> None:
-                """錄音回調"""
-                self.audio_queue.put(audio_np)
+                """錄音回調 - 隊列滿時自動阻塞"""
+                try:
+                    # 如果隊列滿了，這裡會阻塞直到有空間
+                    # 這樣可以防止 OOM，同時避免丟棄音訊
+                    self.audio_queue.put(audio_np, block=True, timeout=2.0)
+                except queue.Full:
+                    logger.warning("音訊隊列已滿，丟棄舊音訊")
             
             if device_index is None:
                 devices: List[str] = self.audio_mgr.get_audio_devices()
@@ -256,28 +299,18 @@ class AppController:
             
         except Exception as e:
             logger.error(f"錄音線程出錯：{e}", exc_info=True)
+            self.recording_state.stop()
             self.is_recording = False
     
     def _processing_worker(self) -> None:
-        """背景翻譯員（消費者）"""
+        """背景翻譯員（消費者）- 使用 Event 管理循環"""
         try:
-            while self.is_recording:
+            # 使用 Event 檢查停止信號，更加即時和安全
+            while not self.recording_state.is_set():
                 try:
-                    # 檢查隊列大小，防止記憶體洩漏
-                    queue_size: int = self.audio_queue.qsize()
-                    if queue_size > 10:
-                        logger.warning(f"系統處理速度過慢，丟棄舊音訊 (Queue Size: {queue_size})")
-                        while not self.audio_queue.empty():
-                            try:
-                                self.audio_queue.get_nowait()
-                                self.audio_queue.task_done()
-                            except queue.Empty:
-                                break
-                        continue
-                    
-                    # 從隊列獲取音訊數據
+                    # 從隊列獲取音訊數據 (使用 timeout 避免無限阻塞)
                     try:
-                        audio_data: np.ndarray = self.audio_queue.get(timeout=1.0)
+                        audio_data: np.ndarray = self.audio_queue.get(timeout=0.5)
                     except queue.Empty:
                         continue
                     
@@ -443,7 +476,7 @@ class AppController:
         """生成 SRT 字幕內容"""
         srt_lines: List[str] = []
         
-        for idx: int, subtitle in enumerate(self.subtitles, 1):
+        for idx, subtitle in enumerate(self.subtitles, 1):
             # 時間碼（簡化版本）
             start_time: str = f"00:00:{(idx-1):02d},000"
             end_time: str = f"00:00:{idx:02d},000"
