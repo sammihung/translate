@@ -9,9 +9,19 @@ from tkinter import filedialog, messagebox
 from datetime import datetime
 import uuid
 from typing import Optional, Callable, Dict, Any, List
+from functools import wraps
 from logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+# 🔧 優化 4: Thread-Safe Decorator - 簡化 UI 更新代碼
+def run_in_main_thread(func):
+    """Decorator 確保函數喺主執行緒執行 (Tkinter 要求)"""
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        self.after(0, lambda: func(self, *args, **kwargs))
+    return wrapper
 
 
 class MainUI(ctk.CTkFrame):
@@ -314,15 +324,15 @@ class MainUI(ctk.CTkFrame):
             self.device_combo.configure(values=["無可用音訊裝置"])
             self.device_var.set("無可用音訊裝置")
     
+    @run_in_main_thread
     def set_status(self, text: str, color: str = None):
-        def _update():
-            self.status_indicator.configure(text=text, text_color=color if color else self.colors["text_muted"])
-        self.after(0, _update)
+        """更新狀態指示器 - Thread-Safe"""
+        self.status_indicator.configure(text=text, text_color=color if color else self.colors["text_muted"])
 
+    @run_in_main_thread
     def enable_record_button(self, enabled: bool):
-        def _update():
-            self.record_btn.configure(state="normal" if enabled else "disabled")
-        self.after(0, _update)
+        """啟用/禁用錄音按鈕 - Thread-Safe"""
+        self.record_btn.configure(state="normal" if enabled else "disabled")
 
     def get_selected_device(self) -> str:
         return self.device_var.get()
@@ -368,15 +378,15 @@ class MainUI(ctk.CTkFrame):
         if hasattr(self, 'on_upload_file') and callable(self.on_upload_file): 
             self.on_upload_file()
     
+    @run_in_main_thread
     def update_record_state(self, is_recording: bool):
-        def _update():
-            if is_recording:
-                self.record_btn.configure(text="■", fg_color=self.colors["bg_panel"], hover_color="#334155")
-                self.record_status_label.configure(text="LISTENING...", text_color=self.colors["success"])
-            else:
-                self.record_btn.configure(text="🎤", fg_color=self.colors["danger"], hover_color=self.colors["danger_hover"])
-                self.record_status_label.configure(text="PAUSED", text_color=self.colors["text_muted"])
-        self.after(0, _update)
+        """更新錄音按鈕狀態 - Thread-Safe"""
+        if is_recording:
+            self.record_btn.configure(text="■", fg_color=self.colors["bg_panel"], hover_color="#334155")
+            self.record_status_label.configure(text="LISTENING...", text_color=self.colors["success"])
+        else:
+            self.record_btn.configure(text="🎤", fg_color=self.colors["danger"], hover_color=self.colors["danger_hover"])
+            self.record_status_label.configure(text="PAUSED", text_color=self.colors["text_muted"])
     
     def add_chat_bubble(self, speaker_name: str, original: str, translated: str, speaker_id: int = 1) -> str:
         bubble_id = str(uuid.uuid4())

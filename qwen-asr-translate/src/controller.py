@@ -8,6 +8,7 @@ import queue
 import time
 from typing import Optional, Callable, List, Dict, Any
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
 
@@ -104,6 +105,9 @@ class AppController:
         self.on_translation_complete: Optional[Callable[[str, str], None]] = None
         self.on_status_change: Optional[Callable[[str, str], None]] = None
         self.on_device_refresh: Optional[Callable[[], None]] = None
+        
+        # 🔧 優化 2: Thread Pool - 限制翻譯併發數量
+        self.translate_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="Translator")
         
         # 設置
         self.target_lang: str = "zh"
@@ -264,7 +268,7 @@ class AppController:
         return self.ai_ctrl.engines_ready
     
     def set_settings(self, settings: Dict[str, Any]) -> None:
-        """更新設置 - 支持三階段模型切換"""
+        """更新設置 - 支持三階段模型切換 + VAD 參數"""
         try:
             if "language" in settings:
                 self.target_lang = settings["language"]
@@ -295,6 +299,18 @@ class AppController:
                     self.ai_ctrl.translate_engine.model_name = self.tgt_model_name
                     self.ai_ctrl.translate_engine.loaded = False  # 強制重新載入
                     logger.info(f"翻譯模型已更新為：{self.tgt_model_name}")
+            
+            # 🔧 優化 3: 更新 VAD 參數
+            if "vad_duration" in settings:
+                vad_duration: float = settings["vad_duration"]
+                # 計算 RMS 閾值 (簡單線性映射：1.0s=200, 3.0s=100)
+                rms_threshold: float = 250.0 - (vad_duration - 0.5) * 75.0
+                self.audio_mgr.set_vad_params(
+                    rms_threshold=rms_threshold,
+                    silence_duration=vad_duration,
+                    max_duration=8.0
+                )
+                logger.info(f"VAD 參數已更新：RMS={rms_threshold:.1f}, 靜音={vad_duration}s")
             
             # 重新初始化 ASR
             logger.info(f"正在套用新設定：{target_asr} on {target_device}")
@@ -497,13 +513,13 @@ class AppController:
                                     except Exception as e:
                                         logger.error(f"背景翻譯失敗：{e}", exc_info=True)
                                 
-                                # 啟動獨立線程，唔阻礙主隊列聽下一句說話
-                                threading.Thread(
-                                    target=translate_task,
-                                    args=(original, bubble_id, item_index),
-                                    daemon=True,
-                                    name="Translator"
-                                ).start()
+                                # 🔧 優化 2: 使用 Thread Pool 代替無限創建 Thread
+                                self.translate_pool.submit(
+                                    translate_task,
+                                    original,
+                                    bubble_id,
+                                    item_index
+                                )
                     
                     finally:
                         try:

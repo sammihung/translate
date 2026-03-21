@@ -323,6 +323,10 @@ class TranslationEngine:
         self.model_name: str = model_name
         self.history: List[str] = []
         
+        # 🔧 優化 1: HTTP Keep-Alive - 重用 TCP 連線
+        self.session = requests.Session()
+        self.session.headers.update({"Content-Type": "application/json"})
+        
         # LLM 需要文字指令，所以我哋將代碼轉換成清晰嘅語言名稱
         self.lang_map: Dict[str, str] = {
             "zh": "Traditional Chinese (繁體中文)",
@@ -340,7 +344,7 @@ class TranslationEngine:
         try:
             # 第一步：Ping 一吓 Ollama 睇吓有無反應
             logger.info("正在連接 Ollama API...")
-            response = requests.get("http://127.0.0.1:11434/", timeout=5)
+            response = self.session.get("http://127.0.0.1:11434/", timeout=5)
             
             if response.status_code == 200:
                 logger.info(f"成功連接 Ollama API. 正在預熱模型：{self.model_name}...")
@@ -356,7 +360,7 @@ class TranslationEngine:
                 }
                 
                 # 呢個動作會食你 5 到 10 秒時間，但因為係開 App 階段所以無問題
-                requests.post(self.api_url, json=warmup_payload, timeout=60)
+                self.session.post(self.api_url, json=warmup_payload, timeout=60)
                 
                 logger.info(f"[OK] 模型預熱完成！Ollama 翻譯引擎已處於備戰狀態。")
                 self.loaded = True
@@ -412,7 +416,8 @@ class TranslationEngine:
                 }
             }
             
-            response = requests.post(self.api_url, json=payload, timeout=60)
+            # 🔧 優化 1: 使用 Session 重用連線 (HTTP Keep-Alive)
+            response = self.session.post(self.api_url, json=payload, timeout=60)
             
             if response.status_code == 200:
                 result: str = response.json().get("response", "").strip()
