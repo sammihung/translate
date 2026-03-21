@@ -91,7 +91,8 @@ class AudioManager:
                     
                     # 只選有輸入通道的設備
                     if max_input_channels > 0 and device_name:
-                        device_list.append(device_name)
+                        # 🔧 FIX: 加上 [i] 讓 parse_device_index 可以正確解析出設備 ID
+                        device_list.append(f"{device_name} [{i}]")
                         
                 except Exception as e:
                     logger.debug(f"設備 {i} 讀取失敗：{e}")
