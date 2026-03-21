@@ -54,23 +54,23 @@ AVAILABLE_MODELS = {
     "asr": {
         "fast": ASRModelConfig(
             name="Qwen3-ASR-0.6B INT8",
-            repo="dseditor/Qwen3-ASR-0.6B-INT8_ASYM-OpenVINO",
+            repo="Qwen/Qwen3-ASR-0.6B",
             precision="int8",
-            description="極速 ASR，適合無獨立顯卡或舊電腦",
+            description="極速 ASR，適合無獨立顯卡或舊電腦 (使用 bitsandbytes INT8)",
             recommended_vram="4GB RAM"
         ),
         "balanced": ASRModelConfig(
             name="Qwen3-ASR-1.7B INT8",
-            repo="dseditor/Qwen3-ASR-1.7B-INT8_OpenVINO",
+            repo="Qwen/Qwen3-ASR-1.7B",
             precision="int8",
-            description="平衡 ASR，準確度與速度的最佳平衡點",
+            description="平衡 ASR，準確度與速度的最佳平衡點 (使用 bitsandbytes INT8)",
             recommended_vram="8GB RAM / 4GB VRAM"
         ),
         "full": ASRModelConfig(
             name="Qwen3-ASR-1.7B FP16",
             repo="Qwen/Qwen3-ASR-1.7B",
             precision="fp16",
-            description="滿血 ASR，最高辨識準確率",
+            description="滿血 ASR，最高辨識準確率 (FP16)",
             recommended_vram="12GB VRAM"
         )
     },

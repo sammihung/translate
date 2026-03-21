@@ -12,29 +12,24 @@ dependencies = [
     "torchaudio>=2.0.0",
     "librosa>=0.10.0",
     "soundfile>=0.12.1",
-    
     # ASR Model
     "qwen-asr>=0.0.6",
-    
     # VAD
     "onnxruntime>=1.16.0",
     "silero-vad>=0.4.0",
-    
     # Speaker Diarization (Optional)
     "pyannote-audio>=3.0.0",
-    
     # Translation
     "requests>=2.31.0",
-    
     # GUI
     "customtkinter>=5.2.0",
     "Pillow>=10.0.0",
-    
     # Audio I/O
     "pyaudio>=0.2.13",
-    
     # Utilities
     "tqdm>=4.66.0",
+    "bitsandbytes>=0.49.2",
+    "accelerate>=1.12.0",
 ]
 
 [project.optional-dependencies]
@@ -61,8 +56,8 @@ dev = [
 
 gpu = [
     # GPU Support
-    "torch>=2.0.0+cu118",
-    "torchaudio>=2.0.0+cu118",
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
 ]
 
 [tool.uv.workspace]

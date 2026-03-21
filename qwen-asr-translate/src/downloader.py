@@ -11,24 +11,26 @@ import json
 
 
 MODELS = {
-    "qwen3_asr_0.6b_int8": {
-        "name": "Qwen3-ASR-0.6B INT8",
-        "repo": "dseditor/Qwen3-ASR-0.6B-INT8_ASYM-OpenVINO",
-        "files": [
-            "openvino_model.xml",
-            "openvino_model.bin",
-        ],
-        "output_dir": "ov_models/qwen3_asr_int8",
+    # ⚡ [極速版] - 換成 PyTorch 標準版
+    "qwen3_asr_0.6b": {
+        "name": "Qwen3-ASR-0.6B (極速版)",
+        # 👇 搵返沒有 "OpenVINO" 字眼的標準 Repo
+        "repo": "Qwen/Qwen-Audio-0.6B", # (請填入正確的 HuggingFace repo 名稱)
         "size_gb": 1.2,
     },
+    
+    # ⚖️ [平衡版] - 用標準模型，但依靠 PyTorch 進行 INT8 量化
     "qwen3_asr_1.7b_int8": {
-        "name": "Qwen3-ASR-1.7B INT8",
-        "repo": "dseditor/Qwen3-ASR-1.7B-INT8_OpenVINO",
-        "files": [
-            "openvino_model.xml",
-            "openvino_model.bin",
-        ],
-        "output_dir": "ov_models/qwen3_asr_1p7b_int8",
+        "name": "Qwen3-ASR-1.7B INT8 (平衡版)",
+        # 👇 同樣用標準 Repo，唔好用 OpenVINO
+        "repo": "Qwen/Qwen-Audio-1.7B", # (請填入正確的 HuggingFace repo 名稱)
+        "size_gb": 4.3,
+    },
+    
+    # 🩸 [滿血版]
+    "qwen3_asr_1.7b_full": {
+        "name": "Qwen3-ASR-1.7B FP16 (滿血版)",
+        "repo": "Qwen/Qwen-Audio-1.7B", 
         "size_gb": 4.3,
     },
     "silero_vad": {

@@ -78,8 +78,26 @@ class AppController:
         self.performance_mode: PerformanceMode = PerformanceMode.BALANCED
         self.current_tier: Optional[PerformanceTier] = None
         
-        # 自動偵測並設定預設效能模式
+        # 🚨 第一步：先定義硬體資訊 (必須放在 _auto_detect 之前) 🚨
+        import torch
+        self.has_gpu: bool = torch.cuda.is_available()
+        self.gpu_vram_gb: float = 0.0
+        
+        if self.has_gpu:
+            try:
+                # 獲取 GPU 記憶體總量 (單位：bytes)
+                vram_bytes = torch.cuda.get_device_properties(0).total_memory
+                self.gpu_vram_gb = vram_bytes / (1024 ** 3)  # 轉換為 GB
+                logger.info(f"檢測到 GPU VRAM: {self.gpu_vram_gb:.2f} GB")
+            except Exception as e:
+                logger.warning(f"無法檢測 GPU VRAM: {e}")
+                self.gpu_vram_gb = 8.0 # 預設給個安全值
+                
+        logger.info(f"GPU Available: {self.has_gpu}")
+        
+        # 🚨 第二步：有了 GPU 資訊後，再執行自動偵測 🚨
         self._auto_detect_performance_mode()
+        logger.info(f"初始效能模式：{self.performance_mode.value}")
         
         # 回調函數
         self.on_subtitle_update: Optional[Callable[[str, str, int], str]] = None
@@ -91,62 +109,62 @@ class AppController:
         self.target_lang: str = "zh"
         self.use_speaker_diarization: bool = False
         self.bilingual_mode: bool = True
-        
-        # 智能偵測：一開機就睇吓有冇 GPU
-        self.has_gpu: bool = torch.cuda.is_available()
-        
-        # 檢測 GPU VRAM (如果有的話)
-        self.gpu_vram_gb: float = 0.0
-        if self.has_gpu and torch.cuda.is_available():
-            try:
-                # 獲取 GPU 記憶體總量 (單位：bytes)
-                vram_bytes = torch.cuda.get_device_properties(0).total_memory
-                self.gpu_vram_gb = vram_bytes / (1024 ** 3)  # 轉換為 GB
-                logger.info(f"檢測到 GPU VRAM: {self.gpu_vram_gb:.2f} GB")
-            except Exception as e:
-                logger.warning(f"無法檢測 GPU VRAM: {e}")
-        
-        logger.info(f"GPU Available: {self.has_gpu}")
-        logger.info(f"初始效能模式：{self.performance_mode.value}")
+        self.use_full_model: bool = False
             
         # 字幕歷史
         self.subtitles: List[Dict[str, Any]] = []
         # 語言變數
         self.src_lang: str = "auto"
         self.tgt_lang: str = "zh"
-    
+           
     def _auto_detect_performance_mode(self) -> None:
         """根據硬體自動偵測並設定效能模式"""
         try:
-            # 檢測系統 RAM (簡化版本，實際可以用 psutil)
+            # 檢測系統 RAM
             import psutil
             total_ram_gb = psutil.virtual_memory().total / (1024 ** 3)
         except ImportError:
             total_ram_gb = 16.0  # 預設值
             logger.warning("無法檢測系統 RAM，使用預設值 16GB")
         
-        # 自動配對邏輯
+        # 1. 自動配對邏輯：同時決定 PerformanceMode 同 tier_key (字串)
         if self.has_gpu and self.gpu_vram_gb >= 12.0:
-            # 12GB+ VRAM -> 滿血版
             self.performance_mode = PerformanceMode.FULL
+            tier_key = "full"
             logger.info("自動設定：🩸 滿血版 (高階 GPU)")
         elif self.has_gpu and self.gpu_vram_gb >= 4.0:
-            # 4-12GB VRAM -> 平衡版
             self.performance_mode = PerformanceMode.BALANCED
+            tier_key = "balanced"
             logger.info("自動設定：⚖️ 平衡版 (入門 GPU)")
         elif total_ram_gb >= 16.0:
-            # 16GB+ RAM, 無 GPU -> 平衡版 (CPU 模式)
             self.performance_mode = PerformanceMode.BALANCED
+            tier_key = "balanced"
             logger.info("自動設定：⚖️ 平衡版 (大 RAM)")
         else:
-            # < 16GB RAM -> 極速版
             self.performance_mode = PerformanceMode.FAST
+            tier_key = "fast"
             logger.info("自動設定：⚡ 極速版 (低階硬體)")
-        
-        # 載入對應的配置
+
+        # 2. 載入對應的 ASR 配置
+        # (確保 get_performance_tier 已經正確導入並定義)
         self.current_tier = get_performance_tier(self.performance_mode)
-        logger.info(f"已載入配置：{self.current_tier.display_name}")
-    
+        logger.info(f"已載入 ASR 配置：{self.current_tier.display_name}")
+            
+        # 3. 根據 tier_key 設定對應的 Ollama 翻譯模型
+        ollama_tiers = {
+            "fast": "translategemma:4b-it-q4_K_M",    # 極速版 (4-bit)
+            "balanced": "translategemma:4b-it-q8_0",  # 平衡版 (8-bit)
+            "full": "translategemma:4b-it-fp16"       # 滿血版 (16-bit)
+        }
+        
+        self.tgt_model_name = ollama_tiers.get(tier_key, "translategemma:4b-it-q4_K_M")
+        logger.info(f"準備使用 Ollama 模型：{self.tgt_model_name}")
+        
+        # 4. 更新到 AI Controller 的翻譯引擎中
+        if hasattr(self, 'ai_ctrl') and hasattr(self.ai_ctrl, 'translate_engine') and self.ai_ctrl.translate_engine:
+            self.ai_ctrl.translate_engine.model_name = self.tgt_model_name
+            self.ai_ctrl.translate_engine.loaded = False # 標記為未載入，強制重新預熱
+                
     def set_performance_mode(self, mode: PerformanceMode) -> None:
         """
         手動設定效能模式

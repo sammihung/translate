@@ -35,6 +35,11 @@ class MainUI(ctk.CTkFrame):
         
         self.configure(fg_color=self.colors["bg_dark"])
         
+        # 側邊欄狀態 (可折疊功能)
+        self.menu_expanded: bool = True
+        self.EXPANDED_WIDTH = 200
+        self.COLLAPSED_WIDTH = 60
+        
         # UI 變數 (用嚟儲存使用者嘅選擇，俾 Controller 讀取)
         self.device_var = ctk.StringVar(value="請先重新整理裝置...")
         self.src_lang_var = ctk.StringVar(value="auto")
@@ -50,40 +55,80 @@ class MainUI(ctk.CTkFrame):
         self.switch_view("realtime")
 
     # ==========================================
-    # 1. 構建左側導覽列 (Sidebar)
+    # 1. 構建左側導覽列 (Sidebar) - 支持可折疊
     # ==========================================
     def _build_sidebar(self):
-        self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0, fg_color="#0f172a")
+        self.sidebar = ctk.CTkFrame(self, width=self.EXPANDED_WIDTH, corner_radius=0, fg_color="#0f172a")
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         self.sidebar.grid_rowconfigure(5, weight=1) 
+        self.sidebar.grid_columnconfigure(0, weight=1)
         
-        self.logo_label = ctk.CTkLabel(
-            self.sidebar, text="🌊 QwenASR", font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=self.colors["primary"]
+        # 頂部容器 (漢堡按鈕 + Logo)
+        header_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(15, 10))
+        header_frame.grid_columnconfigure(1, weight=1)
+        
+        # 漢堡選單按鈕 (☰)
+        self.toggle_btn = ctk.CTkButton(
+            header_frame,
+            text="☰",
+            width=40,
+            height=40,
+            corner_radius=8,
+            fg_color="transparent",
+            hover_color=self.colors["bg_panel"],
+            command=self.toggle_menu,
+            font=ctk.CTkFont(size=18)
         )
-        self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 30))
+        self.toggle_btn.grid(row=0, column=0, padx=0, pady=0)
         
+        # Logo Label (可折疊時隱藏)
+        self.logo_label = ctk.CTkLabel(
+            header_frame,
+            text="🌊 QwenASR",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=self.colors["primary"],
+            anchor="w"
+        )
+        self.logo_label.grid(row=0, column=1, padx=10, pady=0, sticky="w")
+        
+        # 導航按鈕
         self.nav_buttons = {}
+        self.nav_text_labels = {}  # 儲存文字用於切換
         nav_items = [
-            ("realtime", "⚡ 即時翻譯"),
-            ("batch", "📁 批量上傳"),
-            ("settings", "⚙️ 系統設定")
+            ("realtime", "⚡", "即時翻譯"),
+            ("batch", "📁", "批量上傳"),
+            ("settings", "⚙️", "系統設定")
         ]
         
-        for idx, (view_id, text) in enumerate(nav_items, start=1):
+        for idx, (view_id, icon, text) in enumerate(nav_items, start=1):
             btn = ctk.CTkButton(
-                self.sidebar, text=text, font=ctk.CTkFont(size=15),
-                fg_color="transparent", text_color=self.colors["text_muted"],
-                hover_color=self.colors["bg_panel"], anchor="w", height=45,
+                self.sidebar,
+                text=f"{icon}  {text}",
+                font=ctk.CTkFont(size=14),
+                fg_color="transparent",
+                text_color=self.colors["text_muted"],
+                hover_color=self.colors["bg_panel"],
+                anchor="w",
+                height=45,
+                corner_radius=8,
                 command=lambda vid=view_id: self.switch_view(vid)
             )
-            btn.grid(row=idx, column=0, padx=15, pady=5, sticky="ew")
+            btn.grid(row=idx, column=0, padx=10, pady=3, sticky="ew")
             self.nav_buttons[view_id] = btn
+            self.nav_text_labels[view_id] = {"icon": icon, "text": text}
 
+        # 底部狀態指示器
+        self.status_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.status_frame.grid(row=6, column=0, padx=10, pady=20, sticky="w")
+        
         self.status_indicator = ctk.CTkLabel(
-            self.sidebar, text="🟢 系統就緒", font=ctk.CTkFont(size=12), text_color=self.colors["success"]
+            self.status_frame,
+            text="🟢 系統就緒",
+            font=ctk.CTkFont(size=11),
+            text_color=self.colors["success"]
         )
-        self.status_indicator.grid(row=6, column=0, padx=20, pady=20, sticky="w")
+        self.status_indicator.pack(side="left")
 
     # ==========================================
     # 2. 構建主內容區 (Main Container)
@@ -291,6 +336,46 @@ class MainUI(ctk.CTkFrame):
     # ==========================================
     # UI 互動邏輯
     # ==========================================
+    
+    def toggle_menu(self) -> None:
+        """切換側邊欄的展開/收起狀態"""
+        self.menu_expanded = not self.menu_expanded
+        
+        if self.menu_expanded:
+            # 展開狀態
+            self.sidebar.configure(width=self.EXPANDED_WIDTH)
+            self.toggle_btn.configure(text="☰")
+            
+            # 顯示 Logo
+            self.logo_label.grid()
+            
+            # 顯示按鈕文字
+            for view_id, btn in self.nav_buttons.items():
+                icon = self.nav_text_labels[view_id]["icon"]
+                text = self.nav_text_labels[view_id]["text"]
+                btn.configure(text=f"{icon}  {text}")
+            
+            # 顯示狀態文字
+            self.status_indicator.configure(text="🟢 系統就緒")
+            
+        else:
+            # 縮小狀態
+            self.sidebar.configure(width=self.COLLAPSED_WIDTH)
+            self.toggle_btn.configure(text="≡")
+            
+            # 隱藏 Logo
+            self.logo_label.grid_remove()
+            
+            # 只顯示 Icon
+            for view_id, btn in self.nav_buttons.items():
+                icon = self.nav_text_labels[view_id]["icon"]
+                btn.configure(text=icon)
+            
+            # 隱藏狀態文字，只保留圖示
+            self.status_indicator.configure(text="🟢")
+        
+        logger.info(f"側邊欄已{'展開' if self.menu_expanded else '收起'}")
+    
     def switch_view(self, view_id):
         for view in self.views.values():
             view.grid_forget()

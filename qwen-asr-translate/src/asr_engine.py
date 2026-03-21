@@ -126,7 +126,7 @@ class QwenASREngine:
         self.loaded: bool = False
         
     def load_model(self) -> None:
-        """載入 ASR 模型"""
+        """載入 ASR 模型 - 支持 INT8 量化 (bitsandbytes)"""
         if self.loaded:
             logger.debug(f"ASR 模型已載入：{self.model_name}")
             return
@@ -137,26 +137,40 @@ class QwenASREngine:
             import torch
             from qwen_asr import Qwen3ASRModel
             
-            # 關鍵：GPU 必須用 float16，否則 1.7B 會爆 VRAM
-            dtype: torch.dtype = torch.float16 if self.device == "cuda" else torch.float32
+            # 檢測是否需要 INT8 量化 (平衡版)
+            use_int8 = "int8" in self.model_name.lower() or self.device == "cpu"
             
-            self.model = Qwen3ASRModel.from_pretrained(
-                self.model_name,
-                dtype=dtype,
-                device_map=self.device,
-                trust_remote_code=True
-            )
+            if use_int8 and self.device == "cuda":
+                # 使用 bitsandbytes 進行 INT8 量化 (節省 VRAM)
+                logger.info("使用 bitsandbytes INT8 量化載入模型...")
+                self.model = Qwen3ASRModel.from_pretrained(
+                    self.model_name,
+                    load_in_8bit=True,  # INT8 量化
+                    device_map="auto",  # 自動分配到 GPU
+                    trust_remote_code=True
+                )
+            else:
+                # FP16 (滿血版) 或 CPU 模式
+                dtype: torch.dtype = torch.float16 if self.device == "cuda" else torch.float32
+                
+                self.model = Qwen3ASRModel.from_pretrained(
+                    self.model_name,
+                    dtype=dtype,
+                    device_map=self.device,
+                    trust_remote_code=True
+                )
+            
             self.loaded = True
             
             # 釋放未使用的 GPU 記憶體
             if self.device == "cuda" and torch.cuda.is_available():
                 try:
                     torch.cuda.empty_cache()
-                    logger.info(f"[OK] ASR loaded on {self.device}, VRAM cleared")
+                    logger.info(f"[OK] ASR loaded on {self.device} (INT8: {use_int8}), VRAM cleared")
                 except Exception as e:
                     logger.warning(f"VRAM 清理失敗：{e}")
             else:
-                logger.info(f"[OK] ASR loaded on {self.device}")
+                logger.info(f"[OK] ASR loaded on {self.device} (INT8: {use_int8})")
                 
         except Exception as e:
             logger.error(f"[ERROR] ASR Load Failed: {e}", exc_info=True)
@@ -301,14 +315,14 @@ class QwenASREngine:
 class TranslationEngine:
     """翻譯引擎 - 使用本地端 Ollama (TranslateGemma)"""
     
-    def __init__(self, source_lang: str = "auto", target_lang: str = "zh") -> None:
+    def __init__(self, source_lang: str = "auto", target_lang: str = "zh", model_name: str = "translategemma:4b-it-q4_K_M") -> None:
         self.source_lang: str = source_lang
         self.target_lang: str = target_lang
         self.loaded: bool = False
         
         # 指向 Ollama 嘅 API URL 同你下載咗嘅 Gemma 模型
         self.api_url: str = "http://localhost:11434/api/generate"
-        self.model_name: str = "translategemma:4b-it-q4_K_M"
+        self.model_name: str = model_name
         self.history: List[str] = []
         
         # LLM 需要文字指令，所以我哋將代碼轉換成清晰嘅語言名稱
