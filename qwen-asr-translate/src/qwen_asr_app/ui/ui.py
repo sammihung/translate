@@ -63,6 +63,11 @@ class MainUI(ctk.CTkFrame):
             "translated": 16  # 譯文預設大小
         }
         
+        # Track cleaned bubble IDs to avoid updating deleted bubbles
+        self.cleaned_bubble_ids = set()
+        self.max_bubbles = 100  # Main window
+        self.max_floating_bubbles = 50  # Floating window
+        
         # 🔧 FIX 2: Complete 3-Tier Model Maps (CORRECT Qwen3-ASR paths)
         self.asr_repo_map = {
             "⚡ Qwen3-ASR-0.6B (極速版)": "Qwen/Qwen3-ASR-0.6B",
@@ -473,13 +478,16 @@ class MainUI(ctk.CTkFrame):
                 raise
             
             # 清理舊氣泡 (超過 100 個)
-            if len(self.bubble_order) > 100:
+            if len(self.bubble_order) > self.max_bubbles:
                 oldest_id = self.bubble_order.pop(0)
                 if oldest_id in self.bubble_containers: 
                     self.bubble_containers[oldest_id].destroy()
                     del self.bubble_containers[oldest_id]
                 if oldest_id in self.chat_bubbles: 
                     del self.chat_bubbles[oldest_id]
+                # 🔧 記錄已清理的 ID，避免無效更新
+                self.cleaned_bubble_ids.add(oldest_id)
+                logger.debug(f"🗑️ 已清理舊氣泡：{oldest_id[:8]}，總數={len(self.bubble_order)}")
             
             # 捲動到底部
             self.chat_scroll._parent_canvas.yview_moveto(1.0)
@@ -492,11 +500,15 @@ class MainUI(ctk.CTkFrame):
     def update_chat_bubble(self, bubble_id: str, new_translated: str) -> None:
         """更新氣泡翻譯（同時更新主窗口同浮動窗口）"""
         def _update():
+            # 🔧 FIX: 檢查主窗口氣泡是否存在
             if hasattr(self, 'chat_bubbles') and bubble_id in self.chat_bubbles:
                 self.chat_bubbles[bubble_id].configure(text=new_translated)
                 self.chat_scroll._parent_canvas.yview_moveto(1.0)
+                logger.debug(f"✅ [MAIN_UPDATE] 成功更新主窗口氣泡 {bubble_id[:8]}")
+            else:
+                logger.debug(f"⚠️ [MAIN_UPDATE] 主窗口氣泡已清理 {bubble_id[:8]}")
             
-            # 🔧 同時更新浮動窗口
+            # 🔧 同時更新浮動窗口（即使主窗口氣泡被清理）
             if self.floating_mode:
                 self.update_floating_bubble(bubble_id, new_translated)
         
@@ -600,6 +612,9 @@ class MainUI(ctk.CTkFrame):
             self.floating_bubble_containers = {}
             self.floating_bubble_order = []
             
+            # 🔧 FIX: 重置 cleaned_bubble_ids（避免內存泄漏）
+            self.cleaned_bubble_ids.clear()
+            
             # 🔧 FIX: 顯示返主窗口
             if hasattr(self, 'master') and hasattr(self.master, 'deiconify'):
                 self.master.deiconify()  # 顯示主窗口
@@ -613,6 +628,15 @@ class MainUI(ctk.CTkFrame):
             
         except Exception as e:
             logger.error(f"關閉浮動窗口失敗：{e}", exc_info=True)
+    
+    def cleanup_old_bubble_ids(self) -> None:
+        """Periodically clean old bubble IDs to prevent memory growth"""
+        # Keep only last 200 cleaned IDs (recent ones that might still get updates)
+        if len(self.cleaned_bubble_ids) > 200:
+            # Convert to list, keep last 200
+            id_list = list(self.cleaned_bubble_ids)
+            self.cleaned_bubble_ids = set(id_list[-200:])
+            logger.debug(f"🧹 已清理舊 bubble ID 記錄，保留={len(self.cleaned_bubble_ids)}")
     
     # ==========================================
     # Font Size Control
@@ -741,14 +765,16 @@ class MainUI(ctk.CTkFrame):
                 self.floating_chat_scroll._parent_canvas.yview_moveto(1.0)
                 
                 # Cleanup old bubbles (keep last 50)
-                if len(self.floating_bubble_order) > 50:
+                if len(self.floating_bubble_order) > self.max_floating_bubbles:
                     oldest_id = self.floating_bubble_order.pop(0)
                     if oldest_id in self.floating_bubble_containers:
                         self.floating_bubble_containers[oldest_id].destroy()
                         del self.floating_bubble_containers[oldest_id]
                     if oldest_id in self.floating_chat_bubbles:
                         del self.floating_chat_bubbles[oldest_id]
-                    logger.debug(f"🪟 [FLOATING_BUBBLE] 清理舊氣泡：{oldest_id[:8]}")
+                    # 🔧 記錄已清理的 ID
+                    self.cleaned_bubble_ids.add(oldest_id)
+                    logger.debug(f"🪟 [FLOATING_BUBBLE] 清理舊氣泡：{oldest_id[:8]}，總數={len(self.floating_bubble_order)}")
                 
             except Exception as e:
                 logger.error(f"❌ [FLOATING_BUBBLE] 失敗：{e}", exc_info=True)
@@ -756,20 +782,31 @@ class MainUI(ctk.CTkFrame):
         self.after(0, _update)
     
     def update_floating_bubble(self, bubble_id: str, new_translated: str) -> None:
-        """Update floating bubble translation"""
+        """Update floating bubble translation - skip if already cleaned"""
         if not self.floating_mode:
             logger.debug(f"⚠️ [FLOATING_UPDATE] 浮動模式未開啟，bubble_id={bubble_id}")
             return
         
-        logger.debug(f"🪟 [FLOATING_UPDATE] 準備更新浮動氣泡，bubble_id={bubble_id[:8]}, new_translated='{new_translated[:50]}...'")
+        # 🔧 FIX: 如果氣泡已被清理，跳過更新（避免無效操作）
+        if bubble_id in self.cleaned_bubble_ids:
+            logger.debug(f"⚠️ [FLOATING_UPDATE] 氣泡已清理，跳過更新 bubble_id={bubble_id[:8]}")
+            return
+        
+        logger.debug(f"🪟 [FLOATING_UPDATE] 準備更新浮動氣泡，bubble_id={bubble_id[:8]}, translated='{new_translated[:50]}...'")
         
         def _update():
-            if hasattr(self, 'floating_chat_bubbles') and bubble_id in self.floating_chat_bubbles:
-                self.floating_chat_bubbles[bubble_id].configure(text=new_translated)
-                self.floating_chat_scroll._parent_canvas.yview_moveto(1.0)
-                logger.info(f"✅ [FLOATING_UPDATE] 成功！bubble_id={bubble_id[:8]}")
-            else:
-                logger.warning(f"⚠️ [FLOATING_UPDATE] 找不到氣泡，bubble_id={bubble_id[:8]}, 總數={len(self.floating_chat_bubbles) if hasattr(self, 'floating_chat_bubbles') else 0}")
+            try:
+                # Check if bubble exists
+                if hasattr(self, 'floating_chat_bubbles') and bubble_id in self.floating_chat_bubbles:
+                    self.floating_chat_bubbles[bubble_id].configure(text=new_translated)
+                    self.floating_chat_scroll._parent_canvas.yview_moveto(1.0)
+                    logger.info(f"✅ [FLOATING_UPDATE] 成功更新！bubble_id={bubble_id[:8]}")
+                else:
+                    # 🔧 FIX: 如果氣泡被清理咗，但仲有更新過嚟（翻譯完成）
+                    # 唔好顯示警告，因為係正常嘅（舊氣泡被清理）
+                    logger.debug(f"⚠️ [FLOATING_UPDATE] 氣泡已清理（正常），bubble_id={bubble_id[:8]}, 總數={len(self.floating_chat_bubbles) if hasattr(self, 'floating_chat_bubbles') else 0}")
+            except Exception as e:
+                logger.error(f"❌ [FLOATING_UPDATE] 失敗：{e}", exc_info=True)
         
         self.after(0, _update)
     
