@@ -96,6 +96,10 @@ class MainUI(ctk.CTkFrame):
         self.on_upload_file: Optional[Callable] = None
         self.on_save_subtitle: Optional[Callable] = None
         
+        # Floating Overlay Mode
+        self.floating_mode = False
+        self.floating_window: Optional[ctk.CTkToplevel] = None
+        
         # Build UI
         self._build_sidebar()
         self._build_main_container()
@@ -144,6 +148,15 @@ class MainUI(ctk.CTkFrame):
             btn.grid(row=idx, column=0, padx=10, pady=3, sticky="ew")
             self.nav_buttons[view_id] = btn
             self.nav_text_labels[view_id] = {"icon": icon, "text": text}
+
+        # Floating Overlay Mode Button
+        self.floating_btn = ctk.CTkButton(
+            self.sidebar, text="🪟 浮動字幕模式", font=ctk.CTkFont(size=14), 
+            fg_color=self.colors["primary"], text_color=self.colors["text_light"],
+            hover_color=self.colors["primary_hover"], anchor="w", height=45, 
+            corner_radius=8, command=self.toggle_floating_mode
+        )
+        self.floating_btn.grid(row=4, column=0, padx=10, pady=3, sticky="ew")
 
         self.status_indicator = ctk.CTkLabel(
             self.sidebar, text="🟢 系統就緒", font=ctk.CTkFont(size=11), 
@@ -390,7 +403,7 @@ class MainUI(ctk.CTkFrame):
             self.record_status_label.configure(text="PAUSED", text_color=self.colors["text_muted"])
     
     def add_chat_bubble(self, speaker_name: str, original: str, translated: str, speaker_id: int = 1) -> str:
-        """新增聊天氣泡 - Thread-Safe"""
+        """新增聊天氣泡 - Thread-Safe (同時更新主窗口同浮動窗口)"""
         bubble_id = str(uuid.uuid4())
         
         # 🔧 FIX: 手動用 after(0, ...) 包裝，唔好用 decorator（因為會返回 None）
@@ -404,17 +417,17 @@ class MainUI(ctk.CTkFrame):
                 
                 align, bubble_color, text_color = ("w", "#1e293b", self.colors["primary"]) if speaker_id == 1 else ("e", "#064e3b", self.colors["success"])
                 
-                # 建立容器
+                # 建立容器（主窗口）
                 container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
                 container.pack(fill="x", pady=10, padx=10)
                 logger.info(f"💬 [UI_ADD_BUBBLE] 容器已建立")
                 
-                # 建立氣泡
+                # 建立氣泡（主窗口）
                 bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=15)
                 bubble.pack(anchor=align, ipadx=10, ipady=10)
                 logger.info(f"💬 [UI_ADD_BUBBLE] 氣泡已建立")
                 
-                # 建立標題
+                # 建立標題（主窗口）
                 header = ctk.CTkFrame(bubble, fg_color="transparent")
                 header.pack(fill="x", padx=10, pady=(5, 5))
                 
@@ -422,19 +435,24 @@ class MainUI(ctk.CTkFrame):
                 ctk.CTkLabel(header, text=speaker_name, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_color).pack(side=side_align)
                 ctk.CTkLabel(header, text=datetime.now().strftime("%H:%M:%S"), font=ctk.CTkFont(family="Courier", size=10), text_color=self.colors["text_muted"]).pack(side=side_align, padx=10)
                 
-                # 建立原文
+                # 建立原文（主窗口）
                 ctk.CTkLabel(bubble, text=original, font=ctk.CTkFont(size=13, slant="italic"), text_color=self.colors["text_muted"], wraplength=500, justify="left").pack(anchor=align, padx=10, pady=(0, 2))
                 
-                # 建立譯文
+                # 建立譯文（主窗口）
                 trans_label = ctk.CTkLabel(bubble, text=translated, font=ctk.CTkFont(size=16, weight="bold"), text_color=self.colors["text_light"], wraplength=500, justify="left")
                 trans_label.pack(anchor=align, padx=10, pady=(0, 5))
                 logger.info(f"💬 [UI_ADD_BUBBLE] 譯文標籤已建立")
                 
-                # 儲存引用
+                # 儲存引用（主窗口）
                 self.chat_bubbles[bubble_id] = trans_label
                 self.bubble_containers[bubble_id] = container
                 self.bubble_order.append(bubble_id)
                 logger.info(f"✅ [UI_ADD_BUBBLE] 完成！bubble_id={bubble_id}, 總氣泡數={len(self.chat_bubbles)}")
+                
+                # 🔧 如果浮動模式開啟，同時更新浮動窗口（共用同一個 bubble_id）
+                if self.floating_mode:
+                    self._add_floating_bubble_with_id(bubble_id, speaker_name, original, translated, speaker_id)
+                    
             except Exception as e:
                 logger.error(f"❌ [UI_ADD_BUBBLE] 失敗：{e}", exc_info=True)
                 raise
@@ -457,10 +475,16 @@ class MainUI(ctk.CTkFrame):
         return bubble_id  # ✅ 立即返回 ID
     
     def update_chat_bubble(self, bubble_id: str, new_translated: str) -> None:
+        """更新氣泡翻譯（同時更新主窗口同浮動窗口）"""
         def _update():
             if hasattr(self, 'chat_bubbles') and bubble_id in self.chat_bubbles:
                 self.chat_bubbles[bubble_id].configure(text=new_translated)
                 self.chat_scroll._parent_canvas.yview_moveto(1.0)
+            
+            # 🔧 同時更新浮動窗口
+            if self.floating_mode:
+                self.update_floating_bubble(bubble_id, new_translated)
+        
         self.after(0, _update)
     
     def ask_open_audio_file(self) -> Optional[str]:
@@ -478,6 +502,187 @@ class MainUI(ctk.CTkFrame):
     
     def show_error(self, title, msg): 
         messagebox.showerror(title, msg)
+    
+    # ==========================================
+    # Floating Overlay Mode (Transparent Subtitle Window)
+    # ==========================================
+    def toggle_floating_mode(self) -> None:
+        """Toggle Floating Overlay Mode On/Off"""
+        if self.floating_mode:
+            self._close_floating_window()
+        else:
+            self._open_floating_window()
+    
+    def _open_floating_window(self) -> None:
+        """Open Floating Transparent Subtitle Window"""
+        try:
+            # 🔧 FIX: 用標準 Tkinter Toplevel 代替 CustomTkinter
+            self.floating_window = tk.Toplevel(self)
+            self.floating_window.title("浮動字幕")
+            
+            # Make window transparent and always on top
+            self.floating_window.attributes("-topmost", True)  # Always on top
+            self.floating_window.attributes("-alpha", 0.85)  # 85% opacity
+            
+            # Set window size and position
+            self.floating_window.geometry("800x200+100+100")
+            
+            # Make window resizable
+            self.floating_window.resizable(True, True)
+            
+            # 🔧 FIX: 唔好用 fg_color="transparent"，改用標準背景色
+            self.floating_window.configure(bg="#0b0f19")
+            
+            # 🔧 FIX: 隱藏主窗口以節省資源
+            if hasattr(self, 'master') and hasattr(self.master, 'withdraw'):
+                self.master.withdraw()  # 隱藏主窗口
+                logger.info("🔧 已隱藏主窗口以節省資源")
+            
+            # Create a frame for subtitles with semi-transparent background
+            bubble_frame = ctk.CTkFrame(
+                self.floating_window, 
+                fg_color="#0b0f19",  # Dark background
+                corner_radius=15,
+                border_width=2,
+                border_color=self.colors["primary"]
+            )
+            bubble_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            # Create a scrollable label area for subtitles
+            self.floating_chat_scroll = ctk.CTkScrollableFrame(
+                bubble_frame, 
+                fg_color="transparent",
+                corner_radius=0
+            )
+            self.floating_chat_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            # Initialize storage for floating bubbles
+            self.floating_chat_bubbles = {}
+            self.floating_bubble_containers = {}
+            self.floating_bubble_order = []
+            
+            # Handle window close
+            self.floating_window.protocol("WM_DELETE_WINDOW", self._close_floating_window)
+            
+            # Update button text
+            self.floating_btn.configure(text="❌ 關閉浮動模式", fg_color=self.colors["danger"])
+            
+            self.floating_mode = True
+            logger.info("✅ 浮動字幕模式已開啟")
+            
+        except Exception as e:
+            logger.error(f"開啟浮動窗口失敗：{e}", exc_info=True)
+            self.show_error("錯誤", f"無法開啟浮動模式：{e}")
+    
+    def _close_floating_window(self) -> None:
+        """Close Floating Window"""
+        try:
+            if self.floating_window and self.floating_window.winfo_exists():
+                self.floating_window.destroy()
+            
+            self.floating_window = None
+            self.floating_chat_bubbles = {}
+            self.floating_bubble_containers = {}
+            self.floating_bubble_order = []
+            
+            # 🔧 FIX: 顯示返主窗口
+            if hasattr(self, 'master') and hasattr(self.master, 'deiconify'):
+                self.master.deiconify()  # 顯示主窗口
+                logger.info("🔧 已顯示主窗口")
+            
+            # Update button text
+            self.floating_btn.configure(text="🪟 浮動字幕模式", fg_color=self.colors["primary"])
+            
+            self.floating_mode = False
+            logger.info("✅ 浮動字幕模式已關閉")
+            
+        except Exception as e:
+            logger.error(f"關閉浮動窗口失敗：{e}", exc_info=True)
+    
+    def _add_floating_bubble_with_id(self, bubble_id: str, speaker_name: str, original: str, translated: str, speaker_id: int = 1) -> None:
+        """Add bubble to floating window with shared bubble_id (internal use)"""
+        if not self.floating_mode or not self.floating_window:
+            logger.warning(f"⚠️ [FLOATING_BUBBLE] 浮動模式未開啟或窗口不存在")
+            return
+        
+        logger.info(f"🪟 [FLOATING_BUBBLE] 準備建立浮動氣泡，bubble_id={bubble_id[:8]}, translated='{translated[:50]}...'")
+        
+        def _update():
+            try:
+                align = "w" if speaker_id == 1 else "e"
+                bubble_color = "#1e293b" if speaker_id == 1 else "#064e3b"
+                text_color = self.colors["primary"] if speaker_id == 1 else self.colors["success"]
+                
+                # Create container
+                container = ctk.CTkFrame(self.floating_chat_scroll, fg_color="transparent")
+                container.pack(fill="x", pady=5, padx=5)
+                logger.debug(f"🪟 [FLOATING_BUBBLE] 容器已建立")
+                
+                # Create bubble
+                bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=10)
+                bubble.pack(anchor=align, ipadx=8, ipady=8)
+                logger.debug(f"🪟 [FLOATING_BUBBLE] 氣泡已建立")
+                
+                # Original text (smaller font)
+                ctk.CTkLabel(
+                    bubble, text=original, 
+                    font=ctk.CTkFont(size=11, slant="italic"), 
+                    text_color=self.colors["text_muted"], 
+                    wraplength=600, justify="left"
+                ).pack(anchor=align, padx=8, pady=(0, 2))
+                logger.debug(f"🪟 [FLOATING_BUBBLE] 原文已加入")
+                
+                # Translated text (larger, bold)
+                trans_label = ctk.CTkLabel(
+                    bubble, text=translated, 
+                    font=ctk.CTkFont(size=14, weight="bold"), 
+                    text_color=self.colors["text_light"], 
+                    wraplength=600, justify="left"
+                )
+                trans_label.pack(anchor=align, padx=8, pady=(0, 5))
+                logger.debug(f"🪟 [FLOATING_BUBBLE] 譯文已加入：'{translated[:50]}...'")
+                
+                # Store references (USE SHARED bubble_id)
+                self.floating_chat_bubbles[bubble_id] = trans_label
+                self.floating_bubble_containers[bubble_id] = container
+                self.floating_bubble_order.append(bubble_id)
+                logger.info(f"✅ [FLOATING_BUBBLE] 完成！bubble_id={bubble_id[:8]}, 總氣泡數={len(self.floating_chat_bubbles)}")
+                
+                # Auto-scroll to bottom
+                self.floating_chat_scroll._parent_canvas.yview_moveto(1.0)
+                
+                # Cleanup old bubbles (keep last 50)
+                if len(self.floating_bubble_order) > 50:
+                    oldest_id = self.floating_bubble_order.pop(0)
+                    if oldest_id in self.floating_bubble_containers:
+                        self.floating_bubble_containers[oldest_id].destroy()
+                        del self.floating_bubble_containers[oldest_id]
+                    if oldest_id in self.floating_chat_bubbles:
+                        del self.floating_chat_bubbles[oldest_id]
+                    logger.debug(f"🪟 [FLOATING_BUBBLE] 清理舊氣泡：{oldest_id[:8]}")
+                
+            except Exception as e:
+                logger.error(f"❌ [FLOATING_BUBBLE] 失敗：{e}", exc_info=True)
+        
+        self.after(0, _update)
+    
+    def update_floating_bubble(self, bubble_id: str, new_translated: str) -> None:
+        """Update floating bubble translation"""
+        if not self.floating_mode:
+            logger.debug(f"⚠️ [FLOATING_UPDATE] 浮動模式未開啟，bubble_id={bubble_id}")
+            return
+        
+        logger.debug(f"🪟 [FLOATING_UPDATE] 準備更新浮動氣泡，bubble_id={bubble_id[:8]}, new_translated='{new_translated[:50]}...'")
+        
+        def _update():
+            if hasattr(self, 'floating_chat_bubbles') and bubble_id in self.floating_chat_bubbles:
+                self.floating_chat_bubbles[bubble_id].configure(text=new_translated)
+                self.floating_chat_scroll._parent_canvas.yview_moveto(1.0)
+                logger.info(f"✅ [FLOATING_UPDATE] 成功！bubble_id={bubble_id[:8]}")
+            else:
+                logger.warning(f"⚠️ [FLOATING_UPDATE] 找不到氣泡，bubble_id={bubble_id[:8]}, 總數={len(self.floating_chat_bubbles) if hasattr(self, 'floating_chat_bubbles') else 0}")
+        
+        self.after(0, _update)
     
     # 🔧 FIX 7: Save Settings with Correct Mapping
     def _on_save_settings(self):
