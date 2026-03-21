@@ -62,6 +62,7 @@ class MainUI(ctk.CTkFrame):
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         self.sidebar.grid_rowconfigure(5, weight=1) 
         self.sidebar.grid_columnconfigure(0, weight=1)
+        self.sidebar.grid_propagate(False)  # 🔧 鎖死寬度，防止被文字撐開
         
         # 頂部容器 (漢堡按鈕 + Logo)
         header_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
@@ -325,12 +326,32 @@ class MainUI(ctk.CTkFrame):
         return self.src_lang_var.get(), self.tgt_lang_var.get()
         
     def get_settings(self):
-        """回傳系統設定"""
+        """回傳系統設定 - 包含模型路徑映射"""
+        # 模型名稱映射 (UI 顯示名稱 → 真實 Repo 路徑)
+        asr_repo_map = {
+            "Qwen3-ASR-0.6B": "Qwen/Qwen3-ASR-0.6B",
+            "Qwen3-ASR-1.7B": "Qwen/Qwen3-ASR-1.7B",
+        }
+        
+        # 設備映射 (UI 顯示名稱 → 真實設備代碼)
+        device_map = {
+            "CPU": "cpu",
+            "CUDA": "cuda",
+        }
+        
+        # 獲取 UI 選擇
+        selected_ui_model = self.asr_model_var.get()
+        selected_ui_device = self.compute_device_var.get()
+        
+        # 轉換為真實路徑
+        real_model_repo = asr_repo_map.get(selected_ui_model, "Qwen/Qwen3-ASR-0.6B")
+        real_device = device_map.get(selected_ui_device, "cpu")
+        
         return {
-            "model": self.asr_model_var.get(),
-            "device": self.compute_device_var.get(),
+            "model": real_model_repo,  # 真實 Repo 路徑
+            "device": real_device,     # "cpu" 或 "cuda"
             "vad_duration": self.vad_duration_var.get(),
-            "use_full_model": self.use_full_model_var.get() # <--- 新增呢行
+            "use_full_model": self.use_full_model_var.get()
         }
 
     # ==========================================
