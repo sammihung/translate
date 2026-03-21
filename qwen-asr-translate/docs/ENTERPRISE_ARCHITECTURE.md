@@ -93,7 +93,7 @@ class ASREngine:
         self.threshold = 150.0  # ❌ 寫死
 
 # ✅ 正確做法 (依賴注入)
-from qwen_asr.config import get_config
+from qwen_asr_app.config import get_config
 
 class ASREngine:
     def __init__(self, config=None):
@@ -151,7 +151,7 @@ python -m qwen_asr.main
 
 ```python
 import logging
-from qwen_asr.core.logging_config import get_logger
+from qwen_asr_app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -313,7 +313,7 @@ class ModelRegistry:
 ```python
 # tests/unit/test_audio_manager.py
 import pytest
-from qwen_asr.audio.audio_manager import AudioManager
+from qwen_asr_app.audio.audio_manager import AudioManager
 
 def test_parse_device_index():
     am = AudioManager()

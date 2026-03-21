@@ -12,10 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
 
-from qwen_asr.audio.audio_manager import AudioManager
-from qwen_asr.ai.ai_controller import AIController
-from qwen_asr.core.logging_config import get_logger
-from qwen_asr.core.model_registry import (
+from qwen_asr_app.audio.audio_manager import AudioManager
+from qwen_asr_app.ai.ai_controller import AIController
+from qwen_asr_app.core.logging_config import get_logger
+from qwen_asr_app.core.model_registry import (
     PerformanceMode,
     PerformanceTier,
     get_performance_tier,

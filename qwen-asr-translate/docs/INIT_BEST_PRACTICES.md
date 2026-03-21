@@ -13,14 +13,14 @@
 **檔案**: `src/qwen_asr/config/__init__.py`
 
 ```python
-from qwen_asr.config.settings import AppConfig, get_config
+from qwen_asr_app.config.settings import AppConfig, get_config
 
 __all__ = ["AppConfig", "get_config"]
 ```
 
 **優點**:
 - ✅ 啟動快速 (無重型套件)
-- ✅ 路徑乾淨 (`from qwen_asr.config import AppConfig`)
+- ✅ 路徑乾淨 (`from qwen_asr_app.config import AppConfig`)
 - ✅ 易於維護
 
 ---
@@ -30,8 +30,8 @@ __all__ = ["AppConfig", "get_config"]
 **檔案**: `src/qwen_asr/core/__init__.py`
 
 ```python
-from qwen_asr.core.logging_config import setup_logging, get_logger
-from qwen_asr.core.model_registry import PerformanceMode, PerformanceTier
+from qwen_asr_app.core.logging_config import setup_logging, get_logger
+from qwen_asr_app.core.model_registry import PerformanceMode, PerformanceTier
 
 __all__ = [
     "setup_logging",
@@ -54,11 +54,11 @@ __all__ = [
 
 ```python
 # Domain
-from qwen_asr.domain.controller import AppController
+from qwen_asr_app.domain.controller import AppController
 __all__ = ["AppController"]
 
 # UI
-from qwen_asr.ui.ui import MainUI
+from qwen_asr_app.ui.ui import MainUI
 __all__ = ["MainUI"]
 ```
 
@@ -77,7 +77,7 @@ __all__ = ["MainUI"]
 
 ```python
 # ❌ 災難！唔好咁寫！
-from qwen_asr.ai.asr_engine import ASREngine  # 會載入 PyTorch (幾 GB)
+from qwen_asr_app.ai.asr_engine import ASREngine  # 會載入 PyTorch (幾 GB)
 ```
 
 **問題**:
@@ -95,8 +95,8 @@ AI 層 - AI 模型管理
 避免啟動延遲同記憶體暴增
 
 請直接 import 特定檔案：
-    from qwen_asr.ai.asr_engine import ASREngine
-    from qwen_asr.ai.ai_controller import AIController
+    from qwen_asr_app.ai.asr_engine import ASREngine
+    from qwen_asr_app.ai.ai_controller import AIController
 """
 
 # 保持留白，避免循環依賴
@@ -110,7 +110,7 @@ AI 層 - AI 模型管理
 
 ```python
 # ❌ 唔好咁寫！
-from qwen_asr.audio.audio_manager import AudioManager  # 會載入 PyAudio
+from qwen_asr_app.audio.audio_manager import AudioManager  # 會載入 PyAudio
 ```
 
 **問題**:
@@ -128,8 +128,8 @@ Audio 層 - 音訊設備管理
 避免啟動延遲
 
 請直接 import 特定檔案：
-    from qwen_asr.audio.audio_manager import AudioManager
-    from qwen_asr.audio.vad_processor import VADProcessor
+    from qwen_asr_app.audio.audio_manager import AudioManager
+    from qwen_asr_app.audio.vad_processor import VADProcessor
 """
 
 # 保持留白，避免循環依賴
@@ -145,11 +145,11 @@ Audio 層 - 音訊設備管理
 
 ```python
 # ❌ 錯誤：一啟動就載入
-from qwen_asr.ai import ASREngine  # 載入 PyTorch
+from qwen_asr_app.ai import ASREngine  # 載入 PyTorch
 
 # ✅ 正確：需要嘅時候先載入
 def load_asr():
-    from qwen_asr.ai.asr_engine import ASREngine
+    from qwen_asr_app.ai.asr_engine import ASREngine
     return ASREngine()
 ```
 
@@ -206,20 +206,20 @@ Audio ↔ Domain (循環！)
 
 ```python
 # ✅ 主程式 (main.py)
-from qwen_asr.config import AppConfig
-from qwen_asr.core import setup_logging, get_logger
-from qwen_asr.domain import AppController
-from qwen_asr.ui import MainUI
+from qwen_asr_app.config import AppConfig
+from qwen_asr_app.core import setup_logging, get_logger
+from qwen_asr_app.domain import AppController
+from qwen_asr_app.ui import MainUI
 
 # 需要 AI 時先載入
 def init_ai():
-    from qwen_asr.ai.asr_engine import ASREngine
-    from qwen_asr.ai.ai_controller import AIController
+    from qwen_asr_app.ai.asr_engine import ASREngine
+    from qwen_asr_app.ai.ai_controller import AIController
     return AIController()
 
 # 需要 Audio 時先載入
 def init_audio():
-    from qwen_asr.audio.audio_manager import AudioManager
+    from qwen_asr_app.audio.audio_manager import AudioManager
     return AudioManager()
 ```
 
@@ -227,11 +227,11 @@ def init_audio():
 
 ```python
 # ❌ 暴露內部結構
-from qwen_asr.ai.asr_engine import ASREngine  # 直接 import 檔案
-from qwen_asr.audio.audio_manager import AudioManager
+from qwen_asr_app.ai.asr_engine import ASREngine  # 直接 import 檔案
+from qwen_asr_app.audio.audio_manager import AudioManager
 
 # ❌ 一啟動就載入 PyTorch
-import qwen_asr.ai  # 災難！
+import qwen_asr_app.ai  # 災難！
 ```
 
 ---
@@ -257,10 +257,10 @@ from .vad_processor import VADProcessor
 
 ```python
 # ❌ ai/__init__.py
-from qwen_asr.domain import AppController  # Domain 依賴 AI
+from qwen_asr_app.domain import AppController  # Domain 依賴 AI
 
 # ❌ domain/__init__.py
-from qwen_asr.ai import ASREngine  # AI 依賴 Domain
+from qwen_asr_app.ai import ASREngine  # AI 依賴 Domain
 
 # 結果：Circular Import → 程式崩潰
 ```

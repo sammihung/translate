@@ -196,7 +196,7 @@ class AppConfig(BaseSettings):
 
 
 # 全域配置實例 (Singleton)
-# 使用方法：from qwen_asr.config import config
+# 使用方法：from qwen_asr_app.config import config
 config = AppConfig()
 
 

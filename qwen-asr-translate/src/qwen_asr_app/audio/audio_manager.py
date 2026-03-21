@@ -13,7 +13,7 @@ import numpy as np
 import re
 from typing import List, Optional, Callable
 import threading
-from qwen_asr.core.logging_config import get_logger
+from qwen_asr_app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 

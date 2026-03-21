@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from tkinter import messagebox
 
-from qwen_asr.ui.ui import MainUI
-from qwen_asr.domain.controller import AppController
-from qwen_asr.core.logging_config import setup_logging, get_logger
+from qwen_asr_app.ui.ui import MainUI
+from qwen_asr_app.domain.controller import AppController
+from qwen_asr_app.core.logging_config import setup_logging, get_logger
 import logging
 # 抑制 Transformers 過度輸出
 import os
@@ -303,16 +303,3 @@ class App(ctk.CTk):
         except Exception as e:
             logger.error(f"關閉時出錯：{e}", exc_info=True)
 
-
-def main() -> None:
-    """主函數"""
-    try:
-        app: App = App()
-        app.mainloop()
-    except Exception as e:
-        logger.critical(f"應用程式崩潰：{e}", exc_info=True)
-        raise
-
-
-if __name__ == "__main__":
-    main()

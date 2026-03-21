@@ -3,4 +3,4 @@
 """
 
 # 未來可以加入工具函數
-# 例如：from qwen_asr.utils.file_helpers import export_srt
+# 例如：from qwen_asr_app.utils.file_helpers import export_srt

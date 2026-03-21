@@ -2,11 +2,6 @@
 Qwen ASR Translate - 企業級語音翻譯系統
 
 主進入點 (Entry Point)
-
-使用方法:
-    python -m qwen_asr.main
-    或
-    python src/qwen_asr/main.py
 """
 
 import sys
@@ -17,15 +12,17 @@ src_path = Path(__file__).parent.parent
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from app import QwenASRApp
-
+# ✅ 修正 1：使用絕對路徑，並匯入正確的類別名稱 App
+from qwen_asr_app.app import App
 
 def main() -> None:
     """應用程式主函數"""
     try:
-        # 創建並啟動應用程式
-        app = QwenASRApp()
-        app.run()
+        # ✅ 修正 2：實例化 App
+        app = App()
+        
+        # ✅ 修正 3：Tkinter / CustomTkinter 的正確啟動方法是 mainloop()
+        app.mainloop()
         
     except KeyboardInterrupt:
         print("\n👋 應用程式已終止")
@@ -36,7 +33,6 @@ def main() -> None:
         import traceback
         traceback.print_exc()
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

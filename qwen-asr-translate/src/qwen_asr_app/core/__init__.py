@@ -2,8 +2,8 @@
 核心層 - 日誌、模型註冊表
 """
 
-from qwen_asr.core.logging_config import setup_logging, get_logger
-from qwen_asr.core.model_registry import (
+from qwen_asr_app.core.logging_config import setup_logging, get_logger
+from qwen_asr_app.core.model_registry import (
     PerformanceMode,
     PerformanceTier,
     get_performance_tier,

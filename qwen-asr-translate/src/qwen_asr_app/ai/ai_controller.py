@@ -6,7 +6,7 @@ AI Controller - AI 模型管理與推理
 from typing import Optional, Tuple, List, Callable
 import threading
 import numpy as np
-from qwen_asr.core.logging_config import get_logger
+from qwen_asr_app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -49,7 +49,7 @@ class AIController:
             logger.info(f"正在載入 ASR 模型：{asr_model}")
             
             try:
-                from asr_engine import QwenASREngine
+                from qwen_asr_app.ai.asr_engine import QwenASREngine
                 # 🔧 FIX: 使用臨時變數，載入成功後才替換（避免 Race Condition）
                 new_asr = QwenASREngine(model_name=asr_model, device=device)
                 new_asr.load_model()
@@ -64,7 +64,7 @@ class AIController:
             
             logger.info("正在載入 VAD 處理器")
             
-            from vad_processor import VADProcessor
+            from qwen_asr_app.audio.vad_processor import VADProcessor
             self.vad_processor = VADProcessor()
             logger.info("✓ VAD 處理器載入完成")
             
