@@ -12,7 +12,7 @@ except Exception as e:
 
 print("\n測試 2: 檢查 asr_engine 模組...")
 try:
-    from asr_engine import QwenASREngine
+    from qwen_asr_app.ai.asr_engine import QwenASREngine
     print("✅ asr_engine 模組載入成功")
 except Exception as e:
     print(f"❌ asr_engine 載入失敗：{e}")

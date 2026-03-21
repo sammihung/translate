@@ -71,7 +71,13 @@ members = [
 ]
 
 [[tool.uv.index]]
+name = "pytorch-cuda"
 url = "https://download.pytorch.org/whl/cu121"
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cuda" }]
+torchaudio = [{ index = "pytorch-cuda" }]
+torchvision = [{ index = "pytorch-cuda" }]
 
 [tool.ruff]
 line-length = 100

@@ -1,14 +1,14 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo Qwen ASR Translate - GPU Version
+echo Qwen ASR Translate - Launcher
 echo ========================================
 echo.
 
 cd /d C:\Users\sherm\translate\qwen-asr-translate
 
-echo Installing dependencies with CUDA support...
-.venv\Scripts\uv.exe pip install --frozen --no-sync -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121 --quiet
+echo Installing missing dependencies...
+.venv\Scripts\pip.exe install pydantic pydantic-settings python-dotenv --quiet
 
 echo Starting application...
 echo.

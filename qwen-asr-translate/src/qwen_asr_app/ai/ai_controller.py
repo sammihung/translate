@@ -74,7 +74,7 @@ class AIController:
             
             logger.info(f"正在載入翻譯引擎，目標語言：{target_lang}")
             
-            from asr_engine import TranslationEngine
+            from qwen_asr_app.ai.asr_engine import TranslationEngine
             self.translate_engine = TranslationEngine(source_lang="zh", target_lang=target_lang)
             self.translate_engine.load_model()
             logger.info("✓ 翻譯引擎載入完成")
@@ -87,7 +87,7 @@ class AIController:
                 logger.info("正在載入說話者分離模型")
                 
                 try:
-                    from asr_engine import SpeakerDiarization
+                    from qwen_asr_app.ai.asr_engine import SpeakerDiarization
                     self.speaker_diarization = SpeakerDiarization()
                     self.speaker_diarization.load_pipeline()
                     logger.info("✓ 說話者分離載入完成")

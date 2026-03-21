@@ -89,30 +89,35 @@ class App(ctk.CTk):
         logger.info(f"語言已切換：來源={src}, 目標={tgt}")
     
     def _initialize(self) -> None:
-        """初始化應用程式 - 自動配對三階段選項"""
+        """初始化應用程式 - 統一由 Controller 決定模式"""
         try:
             # 更新設備列表
             devices: list[str] = self.controller.get_audio_devices()
             self.ui.set_device_list(devices)
             
-            # 🔧 根據硬體自動配對 UI 選項
+            # ✅ 直接從 Controller 獲取已經判定好的模式並更新 UI
+            asr_repo, translate_model = self.controller.get_current_model_config()
+            tier_name = self.controller.current_tier.display_name
+            
+            # 尋找 UI 中對應的顯示名稱
+            for display_name, repo in self.ui.asr_repo_map.items():
+                if repo == asr_repo:
+                    self.ui.asr_model_var.set(display_name)
+                    break
+            
+            # 同步翻譯模型
+            for display_name, model in self.ui.translate_map.items():
+                if model == translate_model:
+                    self.ui.translate_model_var.set(display_name)
+                    break
+            
+            # 同步計算設備
             if self.controller.has_gpu:
-                if self.controller.gpu_vram_gb >= 12.0:
-                    # 滿血版
-                    self.ui.asr_model_var.set("🩸 Qwen3-ASR-1.7B FP16 (滿血版)")
-                    self.ui.translate_model_var.set("🩸 Gemma-4B 16-bit (滿血版)")
-                else:
-                    # 平衡版
-                    self.ui.asr_model_var.set("⚖️ Qwen3-ASR-1.7B INT8 (平衡版)")
-                    self.ui.translate_model_var.set("⚖️ Gemma-4B 8-bit (平衡版)")
                 self.ui.compute_device_var.set("🚀 CUDA (Nvidia GPU)")
             else:
-                # 極速版
-                self.ui.asr_model_var.set("⚡ Qwen3-ASR-0.6B (極速版)")
-                self.ui.translate_model_var.set("⚡ Gemma-4B 4-bit (極速版)")
                 self.ui.compute_device_var.set("💻 CPU (通用，相容性高)")
             
-            logger.info(f"已自動配對效能模式：{self.ui.asr_model_var.get()}")
+            logger.info(f"UI 已同步 Controller 效能模式：{tier_name}")
             
             # 啟動引擎載入
             self.ui.set_status("[LOADING] 正在載入引擎...", "#f59e0b")
