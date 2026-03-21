@@ -195,10 +195,15 @@ class App(ctk.CTk):
     
     def _on_subtitle_update(self, original: str, translated: str, speaker_id: int) -> str:
         """字幕更新回調 (注意：現在會回傳 bubble_id)"""
-        speaker_name: str = f"SPEAKER #{speaker_id}"
-        bubble_id: str = self.ui.add_chat_bubble(speaker_name, original, translated, speaker_id)
-        logger.debug(f"更新字幕：{original[:50]}...")
-        return bubble_id
+        try:
+            speaker_name: str = f"SPEAKER #{speaker_id}"
+            logger.info(f"💬 [_on_subtitle_update] 調用 add_chat_bubble，原文：'{original[:50]}...'")
+            bubble_id: str = self.ui.add_chat_bubble(speaker_name, original, translated, speaker_id)
+            logger.info(f"✅ [_on_subtitle_update] 成功，bubble_id={bubble_id}")
+            return bubble_id
+        except Exception as e:
+            logger.error(f"❌ [_on_subtitle_update] 失敗：{e}", exc_info=True)
+            return ""
         
     def _on_translation_complete(self, bubble_id: str, translated: str) -> None:
         """背景翻譯完成回調"""

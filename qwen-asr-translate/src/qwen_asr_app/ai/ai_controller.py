@@ -50,6 +50,13 @@ class AIController:
             
             try:
                 from qwen_asr_app.ai.asr_engine import QwenASREngine
+                # 🔧 FIX: 先 unload 舊 model，釋放 GPU VRAM
+                if self.asr_engine is not None:
+                    logger.info(f"🗑️ 正在卸載舊 ASR 模型...")
+                    self.asr_engine.unload_model()  # 釋放 GPU 顯存
+                    self.asr_engine = None
+                    logger.info("✅ 舊 ASR 模型已卸載")
+                
                 # 🔧 FIX: 使用臨時變數，載入成功後才替換（避免 Race Condition）
                 new_asr = QwenASREngine(model_name=asr_model, device=device)
                 new_asr.load_model()

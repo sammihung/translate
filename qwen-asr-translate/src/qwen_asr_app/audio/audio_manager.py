@@ -209,15 +209,32 @@ class AudioManager:
                     
                     # 執行切割
                     if should_process:
+                        logger.info(f"🔵 [SHOULD_PROCESS] 觸發 callback，緩衝區大小：{len(self.audio_buffer)}，RMS={rms:.1f}")
                         callback(np.array(self.audio_buffer))
                         self.audio_buffer = []  # 清空緩衝區
                         self.chunk_start_time = current_time  # 記錄新切片開始時間
                     
-                    # 保險：如果緩衝區超過 10 秒，強制切割
+                    # 保險 1: 如果緩衝區超過 10 秒，強制切割
                     if len(self.audio_buffer) >= 16000 * 10:
+                        logger.info(f"🟠 [10S_FORCE] 強制切割，緩衝區大小：{len(self.audio_buffer)}")
                         callback(np.array(self.audio_buffer))
                         self.audio_buffer = []
                         self.chunk_start_time = current_time
+                    
+                    # 🔧 保險 2: 每 3 秒強制送一次數據（防止 VAD 檢測到但無 callback）
+                    if self.chunk_start_time and (current_time - self.chunk_start_time) >= 3.0:
+                        if len(self.audio_buffer) >= 16000 * 1:  # 至少 1 秒數據
+                            logger.info(f"🟢 [3S_FORCE] 強制切割，緩衝區大小：{len(self.audio_buffer)}，RMS={rms:.1f}")
+                            callback(np.array(self.audio_buffer))
+                            self.audio_buffer = []
+                            self.chunk_start_time = current_time
+                            self.silence_start = None
+                        else:
+                            logger.debug(f"⚪ [3S_CHECK] 數據不足，緩衝區大小：{len(self.audio_buffer)}")
+                    
+                    # 🔍 DEBUG: 每秒打印一次狀態
+                    if int(current_time * 10) % 10 == 0:
+                        logger.debug(f"📊 [DEBUG] 緩衝區：{len(self.audio_buffer)} samples ({len(self.audio_buffer)/16000:.1f}s), RMS={rms:.1f}, 是否切割：{should_process}")
                     
                 except Exception as e:
                     logger.error(f"錄音讀取錯誤：{e}")

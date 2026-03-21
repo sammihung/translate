@@ -448,12 +448,14 @@ class AppController:
     def _processing_worker(self) -> None:
         """背景翻譯員（消費者）- 使用 Event 管理循環"""
         try:
+            logger.info("🎯 [_processing_worker] 已啟動，等待音訊數據...")
             # 使用 Event 檢查停止信號，更加即時和安全
             while not self.recording_state.is_set():
                 try:
                     # 從隊列獲取音訊數據 (使用 timeout 避免無限阻塞)
                     try:
                         audio_data: np.ndarray = self.audio_queue.get(timeout=0.5)
+                        logger.info(f"🎯 [QUEUE] 收到音訊數據：shape={audio_data.shape}, duration={len(audio_data)/16000:.2f}s")
                     except queue.Empty:
                         continue
                     
@@ -463,11 +465,13 @@ class AppController:
                         original: str
                         _: str
                         speaker: Optional[str]
+                        logger.info(f"🎤 [ASR_START] 開始處理音訊...")
                         original, _, speaker = self.ai_ctrl.process_audio(
                             audio_data,
                             src_lang=src_lang_param,
                             skip_translation=True
                         )
+                        logger.info(f"🎤 [ASR_RESULT] 原文：'{original[:100] if original else 'EMPTY'}', speaker={speaker}")
                         
                         if original and original.strip():
                             speaker_id: int = 1 if speaker is None else (1 if "SPEAKER_00" in str(speaker) else 2)
@@ -486,9 +490,13 @@ class AppController:
                             item_index: int = len(self.subtitles) - 1
                             
                             # 觸發回調，先將原文畫上 UI，並獲取氣泡 ID
+                            logger.info(f"📢 [UI_CALLBACK] 準備更新 UI，原文：'{original[:50]}...'")
                             bubble_id: Optional[str] = None
                             if self.on_subtitle_update:
                                 bubble_id = self.on_subtitle_update(original, placeholder_text, speaker_id)
+                                logger.info(f"✅ [UI_CALLBACK] 完成，bubble_id={bubble_id}")
+                            else:
+                                logger.error("❌ [ERROR] on_subtitle_update 回調為 None!")
                             
                             # 第二步：如果成功獲取 ID，將原文掟入背景 Thread 慢慢翻譯
                             if bubble_id:
