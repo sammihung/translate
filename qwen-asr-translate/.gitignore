@@ -1,64 +1,99 @@
+# =============================================================================
 # Python
+# =============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-.venv/
-env/
-ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
+# =============================================================================
+# 虛擬環境
+# =============================================================================
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# =============================================================================
 # IDE
-.vscode/
+# =============================================================================
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
-
-# Models (large files)
-ov_models/qwen3_asr_int8/*.bin
-ov_models/qwen3_asr_1p7b_int8/*.bin
-GPUModel/*.bin
-ov_models/diarization/*.onnx
-
-# ffmpeg (auto-downloaded)
-ffmpeg/
-
-# Output
-subtitles/
-*.srt
-*.vtt
-output/
-
-# Logs
-*.log
-logs/
-
-# OS
 .DS_Store
-Thumbs.db
-desktop.ini
 
-# Test
-test_audio/
-test_video/
-.temp/
+# =============================================================================
+# 日誌與數據
+# =============================================================================
+logs/
+*.log
+data/
+*.db
+*.sqlite
+*.sqlite3
 
-# AI Assistant workspace files (OpenClaw/Cursor)
-.openclaw/
-memory/
-AGENTS.md
-HEARTBEAT.md
-IDENTITY.md
-SOUL.md
-TOOLS.md
-USER.md
-BOOTSTRAP.md
+# =============================================================================
+# 模型與緩存
+# =============================================================================
+models/
+.cache/
+.huggingface/
+*.bin
+*.pt
+*.pth
+*.onnx
 
-# UI Mockups (not part of actual application)
-ui_preview.html
-INSTALL_GUIDE.html
+# =============================================================================
+# 測試
+# =============================================================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
 
-# Documentation (optional)
-OPTIMIZATION_GUIDE.md
-OPTIMIZATIONS.md
+# =============================================================================
+# 部署
+# =============================================================================
+*.dockerfile
+docker-compose.override.yml
+.deploy/
+
+# =============================================================================
+# 敏感信息 (永遠唔好 commit!)
+# =============================================================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+credentials/
+
+# =============================================================================
+# 專案特定
+# =============================================================================
+temp/
+tmp/
+*.tmp
+*.bak
+*.backup
