@@ -264,7 +264,7 @@ class AppController:
         return self.ai_ctrl.engines_ready
     
     def set_settings(self, settings: Dict[str, Any]) -> None:
-        """更新設置"""
+        """更新設置 - 支持三階段模型切換"""
         try:
             if "language" in settings:
                 self.target_lang = settings["language"]
@@ -287,19 +287,19 @@ class AppController:
                 target_device = "cpu"
                 logger.warning("未檢測到 GPU，已自動切換回 CPU 模式")
             
-            # 更新翻譯模型 (Ollama)
-            if "use_full_model" in settings:
-                self.use_full_model = settings["use_full_model"]
-                self.tgt_model_name = "translategemma:4b-it" if self.use_full_model else "translategemma:4b-it-q4_K_M"
+            # 🔧 更新翻譯模型 (Ollama) - 支持三階段
+            if "translate_model" in settings:
+                self.tgt_model_name = settings["translate_model"]
                 
                 if self.ai_ctrl.translate_engine:
                     self.ai_ctrl.translate_engine.model_name = self.tgt_model_name
-                    logger.info(f"翻譯模型已更新：{self.tgt_model_name}")
-
+                    self.ai_ctrl.translate_engine.loaded = False  # 強制重新載入
+                    logger.info(f"翻譯模型已更新為：{self.tgt_model_name}")
+            
             # 重新初始化 ASR
             logger.info(f"正在套用新設定：{target_asr} on {target_device}")
             
-            # 注意：載入模型較慢，建議在背景執行緒進行
+            # 載入模型較慢，在背景執行緒進行
             def reload_asr() -> None:
                 try:
                     self.ai_ctrl.load_all_models(

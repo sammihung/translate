@@ -89,38 +89,57 @@ class App(ctk.CTk):
         logger.info(f"語言已切換：來源={src}, 目標={tgt}")
     
     def _initialize(self) -> None:
-        """初始化應用程式"""
+        """初始化應用程式 - 自動配對三階段選項"""
         try:
             # 更新設備列表
             devices: list[str] = self.controller.get_audio_devices()
             self.ui.set_device_list(devices)
-            self.ui.asr_model_var.set("Qwen/Qwen3-ASR-1.7B" if self.controller.has_gpu else "Qwen/Qwen3-ASR-0.6B")
-            self.ui.compute_device_var.set("CUDA" if self.controller.has_gpu else "CPU")
-            self.ui.use_full_model_var.set(self.controller.use_full_model)
             
-            if not self.controller.has_gpu:
-                logger.warning("未檢測到 GPU，Full Model 可能會非常慢")
+            # 🔧 根據硬體自動配對 UI 選項
+            if self.controller.has_gpu:
+                if self.controller.gpu_vram_gb >= 12.0:
+                    # 滿血版
+                    self.ui.asr_model_var.set("🩸 Qwen3-ASR-1.7B FP16 (滿血版)")
+                    self.ui.translate_model_var.set("🩸 Gemma-4B 16-bit (滿血版)")
+                else:
+                    # 平衡版
+                    self.ui.asr_model_var.set("⚖️ Qwen3-ASR-1.7B INT8 (平衡版)")
+                    self.ui.translate_model_var.set("⚖️ Gemma-4B 8-bit (平衡版)")
+                self.ui.compute_device_var.set("🚀 CUDA (Nvidia GPU)")
+            else:
+                # 極速版
+                self.ui.asr_model_var.set("⚡ Qwen3-ASR-0.6B (極速版)")
+                self.ui.translate_model_var.set("⚡ Gemma-4B 4-bit (極速版)")
+                self.ui.compute_device_var.set("💻 CPU (通用，相容性高)")
+            
+            logger.info(f"已自動配對效能模式：{self.ui.asr_model_var.get()}")
             
             # 啟動引擎載入
             self.ui.set_status("[LOADING] 正在載入引擎...", "#f59e0b")
             
             def load_engines() -> None:
-                """背景載入引擎"""
-                def progress_callback(status: str) -> None:
-                    self.ui.set_status(status, "#f59e0b")
-                
-                success: bool = self.controller.initialize_engines(
-                    progress_callback=progress_callback
-                )
-                
-                if success:
-                    self.ui.set_status("[OK] 所有引擎已就緒", "#10b981")
-                    self.ui.enable_record_button(True)
-                    logger.info("引擎初始化成功")
-                else:
-                    self.ui.set_status("[ERROR] 引擎初始化失敗", "#ef4444")
+                """背景載入引擎 - 添加詳細錯誤日誌"""
+                try:
+                    def progress_callback(status: str) -> None:
+                        self.ui.set_status(status, "#f59e0b")
+                    
+                    logger.info("開始初始化引擎...")
+                    success: bool = self.controller.initialize_engines(
+                        progress_callback=progress_callback
+                    )
+                    
+                    if success:
+                        logger.info("引擎初始化成功，啟用錄音按鈕")
+                        self.ui.set_status("[OK] 所有引擎已就緒", "#10b981")
+                        self.ui.enable_record_button(True)
+                    else:
+                        logger.error("引擎初始化失敗 (success=False)")
+                        self.ui.set_status("[ERROR] 引擎初始化失敗", "#ef4444")
+                        self.ui.enable_record_button(False)
+                except Exception as e:
+                    logger.error(f"引擎初始化異常：{e}", exc_info=True)
+                    self.ui.set_status(f"[ERROR] {str(e)}", "#ef4444")
                     self.ui.enable_record_button(False)
-                    logger.error("引擎初始化失敗")
             
             threading.Thread(target=load_engines, daemon=True).start()
             
