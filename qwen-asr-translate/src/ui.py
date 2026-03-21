@@ -388,26 +388,46 @@ class MainUI(ctk.CTkFrame):
             self.record_btn.configure(text="🎤", fg_color=self.colors["danger"], hover_color=self.colors["danger_hover"])
             self.record_status_label.configure(text="PAUSED", text_color=self.colors["text_muted"])
     
+    @run_in_main_thread
     def add_chat_bubble(self, speaker_name: str, original: str, translated: str, speaker_id: int = 1) -> str:
+        """新增聊天氣泡 - Thread-Safe"""
         bubble_id = str(uuid.uuid4())
+        
         def _update(s_id=speaker_id, s_name=speaker_name, orig=original, trans=translated, b_id=bubble_id):
             if not hasattr(self, 'chat_bubbles'):
                 self.chat_bubbles, self.bubble_containers, self.bubble_order = {}, {}, []
+            
             align, bubble_color, text_color = ("w", "#1e293b", self.colors["primary"]) if s_id == 1 else ("e", "#064e3b", self.colors["success"])
+            
+            # 建立容器
             container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
             container.pack(fill="x", pady=10, padx=10)
+            
+            # 建立氣泡
             bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=15)
             bubble.pack(anchor=align, ipadx=10, ipady=10)
+            
+            # 建立標題
             header = ctk.CTkFrame(bubble, fg_color="transparent")
             header.pack(fill="x", padx=10, pady=(5, 5))
+            
             side_align = "left" if s_id == 1 else "right"
             ctk.CTkLabel(header, text=s_name, font=ctk.CTkFont(size=11, weight="bold"), text_color=text_color).pack(side=side_align)
             ctk.CTkLabel(header, text=datetime.now().strftime("%H:%M:%S"), font=ctk.CTkFont(family="Courier", size=10), text_color=self.colors["text_muted"]).pack(side=side_align, padx=10)
+            
+            # 建立原文
             ctk.CTkLabel(bubble, text=orig, font=ctk.CTkFont(size=13, slant="italic"), text_color=self.colors["text_muted"], wraplength=500, justify="left").pack(anchor=align, padx=10, pady=(0, 2))
+            
+            # 建立譯文
             trans_label = ctk.CTkLabel(bubble, text=trans, font=ctk.CTkFont(size=16, weight="bold"), text_color=self.colors["text_light"], wraplength=500, justify="left")
             trans_label.pack(anchor=align, padx=10, pady=(0, 5))
-            self.chat_bubbles[b_id], self.bubble_containers[b_id] = trans_label, container
+            
+            # 儲存引用
+            self.chat_bubbles[b_id] = trans_label
+            self.bubble_containers[b_id] = container
             self.bubble_order.append(b_id)
+            
+            # 清理舊氣泡 (超過 100 個)
             if len(self.bubble_order) > 100:
                 oldest_id = self.bubble_order.pop(0)
                 if oldest_id in self.bubble_containers: 
@@ -415,8 +435,14 @@ class MainUI(ctk.CTkFrame):
                     del self.bubble_containers[oldest_id]
                 if oldest_id in self.chat_bubbles: 
                     del self.chat_bubbles[oldest_id]
+            
+            # 捲動到底部
             self.chat_scroll._parent_canvas.yview_moveto(1.0)
-        self.after(0, _update)
+            
+            logger.debug(f"已新增氣泡：{bubble_id[:8]}... ({orig[:30]}...)")
+        
+        # 🔧 FIX: 移除呢度嘅 after(0, _update)，因為 @run_in_main_thread 已經處理咗
+        # self.after(0, _update)  # ❌ 唔需要！
         return bubble_id
     
     def update_chat_bubble(self, bubble_id: str, new_translated: str) -> None:

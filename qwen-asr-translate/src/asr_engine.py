@@ -32,6 +32,9 @@ class SpeakerDiarization:
         logger.info("Loading Speaker Diarization pipeline...")
         
         try:
+            # 🔧 FIX: 強製提早完整載入 torchvision，打破 Circular Import 嘅魔咒！
+            import torchvision
+            
             from pyannote.audio import Pipeline
             
             # 使用預訓練模型（需要 HuggingFace token）
