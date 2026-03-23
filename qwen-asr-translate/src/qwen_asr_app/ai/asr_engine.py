@@ -140,6 +140,17 @@ class QwenASREngine:
             import torch
             from qwen_asr import Qwen3ASRModel
             
+            # 🔧 FIX: CPU mode 強制用 float32，避免 Half precision 問題
+            if self.device == "cpu":
+                # 強制 CPU 用 float32
+                torch.set_default_dtype(torch.float32)
+                # 確保 CUDA 不可見
+                import os
+                if "CUDA_VISIBLE_DEVICES" in os.environ and os.environ["CUDA_VISIBLE_DEVICES"] == "":
+                    pass  # Already disabled
+                elif not torch.cuda.is_available():
+                    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+            
             # 檢測是否需要 INT8 量化 (平衡版)
             use_int8 = "int8" in self.model_name.lower() or self.device == "cpu"
             

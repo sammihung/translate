@@ -1,0 +1,65 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+env/
+.eggs
+*.egg-info/
+*.egg
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Build
+build/
+dist/
+*.spec
+*.exe
+
+# Logs
+logs/
+*.log
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Misc
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Environment
+.env
+!.env.example
+
+# Lock files
+uv.lock
+poetry.lock

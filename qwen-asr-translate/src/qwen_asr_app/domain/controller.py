@@ -14,6 +14,7 @@ import torch
 
 from qwen_asr_app.audio.audio_manager import AudioManager
 from qwen_asr_app.ai.ai_controller import AIController
+from qwen_asr_app.ai.worker_client import WorkerManager
 from qwen_asr_app.core.logging_config import get_logger
 from qwen_asr_app.core.model_registry import (
     PerformanceMode,
@@ -81,19 +82,26 @@ class AppController:
         
         # 🚨 第一步：先定義硬體資訊 (必須放在 _auto_detect 之前) 🚨
         import torch
-        self.has_gpu: bool = torch.cuda.is_available()
-        self.gpu_vram_gb: float = 0.0
+        try:
+            # 🔧 FIX: 安全地 detect GPU，避免 hang
+            self.has_gpu: bool = torch.cuda.is_available()
+            if self.has_gpu:
+                # 測試 CUDA 是否真係 work (避免得個名)
+                try:
+                    _ = torch.zeros(1).cuda()
+                    self.gpu_vram_gb: float = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+                    logger.info(f"檢測到 GPU VRAM: {self.gpu_vram_gb:.2f} GB")
+                except Exception as e:
+                    logger.warning(f"CUDA available 但無法使用，可能係無 GPU 硬件: {e}")
+                    self.has_gpu = False
+                    self.gpu_vram_gb = 0.0
+            else:
+                self.gpu_vram_gb = 0.0
+        except Exception as e:
+            logger.warning(f"GPU 檢測失敗，使用 CPU: {e}")
+            self.has_gpu = False
+            self.gpu_vram_gb = 0.0
         
-        if self.has_gpu:
-            try:
-                # 獲取 GPU 記憶體總量 (單位：bytes)
-                vram_bytes = torch.cuda.get_device_properties(0).total_memory
-                self.gpu_vram_gb = vram_bytes / (1024 ** 3)  # 轉換為 GB
-                logger.info(f"檢測到 GPU VRAM: {self.gpu_vram_gb:.2f} GB")
-            except Exception as e:
-                logger.warning(f"無法檢測 GPU VRAM: {e}")
-                self.gpu_vram_gb = 8.0 # 預設給個安全值
-                
         logger.info(f"GPU Available: {self.has_gpu}")
         
         # 🚨 第二步：有了 GPU 資訊後，再執行自動偵測 🚨
@@ -216,13 +224,26 @@ class AppController:
             # 獲取當前效能模式的模型配置
             asr_repo, translation_tag = self.get_current_model_config()
             
-            # 根據效能模式決定設備
-            if self.performance_mode == PerformanceMode.FULL and self.has_gpu:
-                device = "cuda"
-            elif self.performance_mode == PerformanceMode.BALANCED and self.has_gpu:
-                device = "cuda"
+            # 🔧 FIX: 優先使用戶既設定，如果冇先至用 default logic
+            from qwen_asr_app.config import config
+            user_device = config.asr_device.lower() if config.asr_device else None
+            
+            # 如果 user 已經設定咗 device (喺 .env 或 settings 度)
+            if user_device and user_device in ["cpu", "cuda"]:
+                device = user_device
+                # 確保 user 選擇既 device 真係可用
+                if device == "cuda" and not self.has_gpu:
+                    logger.warning("User 選擇咗 CUDA 但檢測唔到 GPU，改用 CPU")
+                    device = "cpu"
+                logger.info(f"使用戶既設定: {device}")
             else:
-                device = "cpu"
+                # 根據效能模式同 hardware 決定設備 (default logic)
+                if self.performance_mode == PerformanceMode.FULL and self.has_gpu:
+                    device = "cuda"
+                elif self.performance_mode == PerformanceMode.BALANCED and self.has_gpu:
+                    device = "cuda"
+                else:
+                    device = "cpu"
             
             logger.info(f"正在初始化引擎 (效能模式：{self.performance_mode.value})")
             logger.info(f"  ASR: {asr_repo} ({device})")

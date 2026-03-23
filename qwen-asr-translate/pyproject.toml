@@ -18,8 +18,8 @@ dependencies = [
     # VAD
     "onnxruntime>=1.16.0",
     "silero-vad>=0.4.0",
-    # Speaker Diarization (Optional)
-    "pyannote-audio>=3.0.0",
+    # Speaker Diarization (Optional - Removed from core)
+    # "pyannote-audio>=3.0.0",
     # Translation
     "requests>=2.31.0",
     # GUI
@@ -30,7 +30,7 @@ dependencies = [
     # Utilities
     "tqdm>=4.66.0",
     "bitsandbytes>=0.49.2",
-    "accelerate>=1.12.0",
+    "accelerate>=1.11.0",
     # Configuration Management
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
@@ -38,29 +38,25 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Speaker Diarization (Optional Feature)
+diarization = [
+    "pyannote-audio>=3.0.0",
+]
+
+# Development/Type Checking
 dev = [
-    # Type Checking
     "mypy>=1.5.0",
     "types-requests>=2.31.0",
-    
-    # Code Quality
     "ruff>=0.1.0",
     "black>=23.0.0",
-    
-    # Testing
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
-    
-    # Pre-commit
     "pre-commit>=3.5.0",
-    
-    # Logging (Optional Enhancement)
     "loguru>=0.7.0",
     "python-json-logger>=2.0.0",
 ]
 
 gpu = [
-    # GPU Support
     "torch>=2.0.0",
     "torchaudio>=2.0.0",
 ]

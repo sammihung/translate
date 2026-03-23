@@ -44,7 +44,7 @@ class AppConfig(BaseSettings):
     )
     
     asr_device: str = Field(
-        default="cuda",
+        default="cpu",
         description="ASR 設備 (cuda, cpu)"
     )
     
