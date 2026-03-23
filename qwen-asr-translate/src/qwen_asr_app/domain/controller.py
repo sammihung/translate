@@ -65,6 +65,10 @@ class AppController:
         # 核心組件
         self.audio_mgr: AudioManager = AudioManager()
         self.ai_ctrl: AIController = AIController()
+        self.worker_mgr: WorkerManager = WorkerManager()
+        
+        # Worker 模式標誌
+        self.use_worker_mode: bool = True  # True=用 Docker workers, False=用本地 ASR
         
         # 狀態 - 使用 Event 確保執行緒安全
         self.recording_state: RecordingState = RecordingState()
@@ -128,6 +132,36 @@ class AppController:
         # 語言變數
         self.src_lang: str = "auto"
         self.tgt_lang: str = "zh"
+    
+    async def get_worker_health(self) -> Dict[str, Any]:
+        """獲取所有 worker 的健康狀態"""
+        return await self.worker_mgr.health_check_all()
+    
+    async def switch_device(self, device: str) -> Dict[str, Any]:
+        """切換設備 (CPU/GPU)"""
+        if device not in ["cpu", "cuda"]:
+            return {"error": "無效設備，必須是 cpu 或 cuda"}
+        
+        result = await self.worker_mgr.switch_device(device)
+        
+        if "error" not in result:
+            self.current_device = device
+            logger.info(f"已切換到 {device} worker")
+            if self.on_status_change:
+                self.on_status_change(f"🔄 使用 {device.upper()}  worker", "#10b981")
+        
+        return result
+    
+    async def transcribe_with_worker(self, audio_data: bytes) -> Dict[str, Any]:
+        """使用 worker 進行轉錄"""
+        if not self.use_worker_mode:
+            return {"error": "Worker 模式未啟用"}
+        
+        return await self.worker_mgr.transcribe_with_fallback(
+            audio_data,
+            sample_rate=16000,
+            language=self.src_lang
+        )
            
     def _auto_detect_performance_mode(self) -> None:
         """根據硬體自動偵測並設定效能模式"""

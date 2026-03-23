@@ -11,9 +11,14 @@ QwenASR Pro - YouTube Edition
 import customtkinter as ctk
 import threading
 import sys
+import asyncio
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from tkinter import messagebox
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import uvicorn
 
 from qwen_asr_app.ui.ui import MainUI
 from qwen_asr_app.domain.controller import AppController
