@@ -1,16 +1,13 @@
 [project]
 name = "qwen-asr-translate"
 version = "0.2.0"
-description = "Real-time ASR translation via OpenAI-compatible API (LM Studio)"
+description = "Real-time ASR translation with local GPU inference"
 requires-python = ">=3.11"
 
 dependencies = [
     "numpy>=1.24.0",
     "librosa>=0.10.0",
     "soundfile>=0.12.1",
-    "requests>=2.31.0",
-    "onnxruntime>=1.16.0",
-    "silero-vad>=0.4.0",
     "customtkinter>=5.2.0",
     "pyaudio>=0.2.13",
     "pyaudiowpatch>=0.2.12.6",
@@ -19,6 +16,12 @@ dependencies = [
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
+    "torch>=2.0.0",
+    "transformers>=4.40.0",
+    "accelerate>=0.30.0",
+    "openai-whisper>=20231117",
+    "requests>=2.31.0",
+    "webrtcvad>=2.0.10",
 ]
 
 [project.optional-dependencies]

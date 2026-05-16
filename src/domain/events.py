@@ -7,6 +7,7 @@ class AppCallbacks:
         self.on_subtitle_update: Optional[Callable[[str, str, int], str]] = None
         self.on_translation_complete: Optional[Callable[[str, str], None]] = None
         self.on_status_change: Optional[Callable[[str, str], None]] = None
+        self.on_audio_level: Optional[Callable[[float], None]] = None
 
     def notify_subtitle_update(self, original: str, translated: str, speaker_id: int) -> str:
         if self.on_subtitle_update:
@@ -20,3 +21,7 @@ class AppCallbacks:
     def notify_status_change(self, status: str, color: str) -> None:
         if self.on_status_change:
             self.on_status_change(status, color)
+
+    def notify_audio_level(self, level: float) -> None:
+        if self.on_audio_level:
+            self.on_audio_level(level)

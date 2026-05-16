@@ -185,10 +185,18 @@ class AppController:
     
     def get_audio_devices(self, source: str = "mic") -> List[str]:
         try:
-            self.audio_mgr.set_audio_source(source)
+            if source != self.audio_mgr.audio_source:
+                self.audio_mgr.set_audio_source(source, self.audio_mgr.target_app)
             return self.audio_mgr.get_audio_devices()
         except Exception as e:
             logger.error(f"獲取設備列表失敗：{e}")
+            return []
+
+    def get_audio_apps(self) -> List[tuple]:
+        try:
+            return self.audio_mgr._enumerate_audio_sessions()
+        except Exception as e:
+            logger.error(f"獲取應用程式列表失敗：{e}")
             return []
     
     def is_engines_ready(self) -> bool:
@@ -214,12 +222,13 @@ class AppController:
                 return False
             
             if not self.ai_ctrl.engines_ready:
-                if self.on_status_change:
-                    self.on_status_change("⚠️ 引擎未就緒", "#f59e0b")
+                self.callbacks.notify_status_change("⚠️ 引擎未就緒", "#f59e0b")
                 return False
             
             self.recording_state.start()
             self.is_recording = True
+
+            self.audio_mgr.on_audio_level = self.callbacks.notify_audio_level
             
             while not self.audio_queue.empty():
                 try:

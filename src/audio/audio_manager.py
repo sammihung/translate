@@ -21,6 +21,7 @@ class AudioManager:
         self.target_app: str = ""
 
         self.vad = SimpleVAD()
+        self.on_audio_level: Optional[Callable[[float], None]] = None
 
     def set_vad_params(self, rms_threshold=150.0, silence_duration=1.5, max_duration=8.0):
         self.vad = SimpleVAD(rms_threshold, silence_duration, max_duration)
@@ -134,6 +135,7 @@ class AudioManager:
             while self.is_recording:
                 data = self.stream.read(1024, exception_on_overflow=False)
                 audio_np = np.frombuffer(data, dtype=np.float32)
+                self._update_level(audio_np)
                 self.vad.process_chunk(audio_np, callback)
 
         except Exception as e:
@@ -161,6 +163,7 @@ class AudioManager:
                 if len(audio_np) > 0:
                     from librosa import resample
                     audio_np = resample(audio_np, orig_sr=48000, target_sr=16000)
+                self._update_level(audio_np)
                 self.vad.process_chunk(audio_np, callback)
 
         except Exception as e:
@@ -175,6 +178,12 @@ class AudioManager:
 
         logger.info(f"Starting per-app recording for: {self.target_app}")
         self._start_system_recording(callback)
+
+    def _update_level(self, audio_np):
+        if self.on_audio_level and len(audio_np) > 0:
+            rms = np.sqrt(np.mean(audio_np ** 2))
+            level = min(1.0, rms * 10)
+            self.on_audio_level(level)
 
     def _close_stream(self):
         try:

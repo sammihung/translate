@@ -23,24 +23,24 @@ class FloatingOverlay:
             self.floating_window = tk.Toplevel(self.master)
             self.floating_window.title("浮動字幕")
             self.floating_window.attributes("-topmost", True)
-            self.floating_window.attributes("-alpha", 0.85)
-            self.floating_window.geometry("800x200+100+100")
+            self.floating_window.attributes("-alpha", 0.88)
+            self.floating_window.geometry("900x240+100+100")
             self.floating_window.resizable(True, True)
-            self.floating_window.configure(bg="#0b0f19")
+            self.floating_window.configure(bg=COLORS["bg_dark"])
 
             if hasattr(self.master, 'withdraw'):
                 self.master.withdraw()
 
             bubble_frame = ctk.CTkFrame(
-                self.floating_window, fg_color="#0b0f19", corner_radius=15,
+                self.floating_window, fg_color=COLORS["bg_dark"], corner_radius=16,
                 border_width=2, border_color=COLORS["primary"]
             )
-            bubble_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            bubble_frame.pack(fill="both", expand=True, padx=12, pady=12)
 
             self.floating_chat_scroll = ctk.CTkScrollableFrame(
                 bubble_frame, fg_color="transparent", corner_radius=0
             )
-            self.floating_chat_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+            self.floating_chat_scroll.pack(fill="both", expand=True, padx=12, pady=12)
 
             self.floating_window.protocol("WM_DELETE_WINDOW", self.close)
             self.floating_chat_bubbles = {}
@@ -79,28 +79,28 @@ class FloatingOverlay:
         if not self.is_open():
             return
 
-        align = "w" if speaker_id == 1 else "e"
-        bubble_color = "#1e293b" if speaker_id == 1 else "#064e3b"
-        text_color = COLORS["primary"] if speaker_id == 1 else COLORS["success"]
+        is_left = speaker_id == 1
+        align = "w" if is_left else "e"
+        bubble_color = COLORS["bubble_left"] if is_left else COLORS["bubble_right"]
 
         container = ctk.CTkFrame(self.floating_chat_scroll, fg_color="transparent")
-        container.pack(fill="x", pady=5, padx=5)
+        container.pack(fill="x", pady=6, padx=6)
 
-        bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=10)
+        bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=12)
         bubble.pack(anchor=align, ipadx=8, ipady=8)
 
         ctk.CTkLabel(
             bubble, text=original,
             font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"),
-            text_color=COLORS["text_muted"], wraplength=600, justify="left"
-        ).pack(anchor=align, padx=8, pady=(0, 2))
+            text_color=COLORS["text_muted"], wraplength=680, justify="left"
+        ).pack(anchor=align, padx=12, pady=(0, 4))
 
         trans_label = ctk.CTkLabel(
             bubble, text=translated,
             font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"),
-            text_color=COLORS["text_light"], wraplength=600, justify="left"
+            text_color=COLORS["text_light"], wraplength=680, justify="left"
         )
-        trans_label.pack(anchor=align, padx=8, pady=(0, 5))
+        trans_label.pack(anchor=align, padx=12, pady=(0, 8))
 
         self.floating_chat_bubbles[bubble_id] = trans_label
         self.floating_bubble_containers[bubble_id] = container
@@ -137,6 +137,12 @@ class FloatingOverlay:
             trans_label.configure(font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"))
             if bubble_id in self.floating_bubble_containers:
                 for widget in self.floating_bubble_containers[bubble_id].winfo_children():
-                    if isinstance(widget, ctk.CTkLabel):
-                        if widget.cget("font") and "italic" in str(widget.cget("font")):
-                            widget.configure(font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"))
+                    if isinstance(widget, ctk.CTkFrame):
+                        for child in widget.winfo_children():
+                            if isinstance(child, ctk.CTkLabel):
+                                try:
+                                    font_str = str(child.cget("font"))
+                                    if "italic" in font_str:
+                                        child.configure(font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"))
+                                except Exception:
+                                    pass

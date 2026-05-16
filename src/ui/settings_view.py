@@ -20,92 +20,141 @@ class SettingsView(ctk.CTkFrame):
         self.vad_duration_var = vad_duration_var
 
         self.on_save_settings = None
-        self.on_fetch_models = None
         self.show_info = None
         self.show_error = None
 
-        self._build_content()
+        self.grid_columnconfigure(0, weight=1)
+        self._build_ui()
 
-    def _build_content(self):
-        ctk.CTkLabel(
-            self, text="API 配置",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            text_color=COLORS["text_light"]
-        ).pack(anchor="w", pady=(0, 20))
+    def _build_ui(self):
+        row = 0
 
-        panel = ctk.CTkFrame(self, fg_color=COLORS["bg_panel"], corner_radius=15)
-        panel.pack(fill="x", pady=10, ipadx=20, ipady=20)
+        ctk.CTkLabel(self, text="API 設定", font=ctk.CTkFont(size=20, weight="bold"),
+                    text_color=COLORS["text_light"]).grid(row=row, column=0, sticky="w", pady=(0, 16))
+        row += 1
 
-        self._build_asr_section(panel)
-        self._build_translate_section(panel)
-        self._build_vad_section(panel)
+        asr_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_panel"], corner_radius=14)
+        asr_frame.grid(row=row, column=0, sticky="ew", pady=(0, 12))
+        asr_frame.grid_columnconfigure(0, weight=1)
+        row += 1
 
-        ctk.CTkButton(
-            self, text="🔄 從 LM Studio 取得模型列表", height=35,
-            fg_color=COLORS["primary_muted"],
-            command=self._handle_fetch_models
-        ).pack(anchor="e", pady=10)
+        self._build_api_section(asr_frame, "🎤  ASR 語音辨識", self.asr_url_var, self.asr_model_var, self.asr_key_var, "asr")
 
-        ctk.CTkButton(
-            self, text="💾 儲存並套用設定", height=45,
-            fg_color=COLORS["primary"],
-            command=self._handle_save
-        ).pack(anchor="e", pady=20)
+        trans_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_panel"], corner_radius=14)
+        trans_frame.grid(row=row, column=0, sticky="ew", pady=(0, 12))
+        trans_frame.grid_columnconfigure(0, weight=1)
+        row += 1
 
-    def _build_asr_section(self, panel):
-        ctk.CTkLabel(panel, text="ASR 語音辨識", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(10, 5))
-        self._build_entry_row(panel, "模型 ID:", self.asr_model_var)
-        self._build_entry_row(panel, "API URL:", self.asr_url_var)
-        self._build_entry_row(panel, "API Key:", self.asr_key_var)
+        self._build_api_section(trans_frame, "🌐  翻譯引擎", self.translate_url_var, self.translate_model_var, self.translate_key_var, "trans")
 
-    def _build_translate_section(self, panel):
-        ctk.CTkLabel(panel, text="翻譯模型", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(15, 5))
-        self._build_entry_row(panel, "模型 ID:", self.translate_model_var)
-        self._build_entry_row(panel, "API URL:", self.translate_url_var)
-        self._build_entry_row(panel, "API Key:", self.translate_key_var)
+        vad_frame = ctk.CTkFrame(self, fg_color=COLORS["bg_panel"], corner_radius=14)
+        vad_frame.grid(row=row, column=0, sticky="ew", pady=(0, 12))
+        vad_frame.grid_columnconfigure(0, weight=1)
+        row += 1
 
-    def _build_vad_section(self, panel):
-        ctk.CTkLabel(panel, text="VAD 靜音切割 (秒)", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(15, 5))
-        slider_frame = ctk.CTkFrame(panel, fg_color="transparent")
-        slider_frame.pack(anchor="w", fill="x", padx=20, pady=(0, 15))
+        self._build_vad_section(vad_frame)
 
-        vad_slider = ctk.CTkSlider(
-            slider_frame, variable=self.vad_duration_var,
-            from_=0.5, to=3.0, number_of_steps=25, width=350
-        )
-        vad_slider.pack(side="left", padx=(0, 15))
+        btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        btn_row.grid(row=row, column=0, sticky="e", pady=(8, 0))
 
-        vad_value_label = ctk.CTkLabel(slider_frame, text="1.5s", font=ctk.CTkFont(family="Courier"))
-        vad_value_label.pack(side="left")
-        vad_slider.configure(command=lambda val: vad_value_label.configure(text=f"{val:.1f}s"))
+        ctk.CTkButton(btn_row, text="💾  儲存設定", height=40, font=ctk.CTkFont(size=14),
+                     fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"],
+                     command=self._handle_save).pack()
 
-    def _build_entry_row(self, panel, label_text, variable):
-        row = ctk.CTkFrame(panel, fg_color="transparent")
-        row.pack(anchor="w", fill="x", padx=20, pady=3)
-        ctk.CTkLabel(row, text=label_text, width=60).pack(side="left")
-        ctk.CTkEntry(row, variable=variable, width=250, fg_color="#0f172a").pack(side="left", padx=5)
+    def _build_api_section(self, parent, title, url_var, model_var, key_var, prefix):
+        header = ctk.CTkFrame(parent, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(14, 8))
+
+        ctk.CTkLabel(header, text=title, font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color=COLORS["text_light"]).pack(side="left")
+
+        status_dot = ctk.CTkLabel(header, text="●", font=ctk.CTkFont(size=12),
+                                   text_color=COLORS["text_dim"])
+        status_dot.pack(side="right", padx=(8, 0))
+
+        status_lbl = ctk.CTkLabel(header, text="未連接", font=ctk.CTkFont(size=12),
+                                   text_color=COLORS["text_dim"])
+        status_lbl.pack(side="right")
+
+        setattr(self, f"{prefix}_dot", status_dot)
+        setattr(self, f"{prefix}_lbl", status_lbl)
+
+        fields = [
+            ("API URL", url_var, "http://localhost:1234/v1"),
+            ("模型名稱", model_var, "模型名稱"),
+            ("API Key", key_var, "可選"),
+        ]
+
+        for label, var, placeholder in fields:
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(fill="x", padx=16, pady=4)
+            ctk.CTkLabel(row, text=label, width=80, font=ctk.CTkFont(size=13),
+                        text_color=COLORS["text_muted"]).pack(side="left")
+            ctk.CTkEntry(row, textvariable=var, height=34, font=ctk.CTkFont(size=13),
+                        fg_color=COLORS["bg_input"], placeholder_text=placeholder,
+                        corner_radius=8).pack(side="left", fill="x", expand=True, padx=(8, 0))
+
+        btn_row = ctk.CTkFrame(parent, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16, pady=(8, 14))
+
+        ctk.CTkButton(btn_row, text="測試連接", width=90, height=32, font=ctk.CTkFont(size=12),
+                      fg_color=COLORS["primary_muted"], hover_color=COLORS["primary"],
+                      command=lambda: self._test_connection(url_var, prefix)).pack(side="left")
+
+    def _build_vad_section(self, parent):
+        header = ctk.CTkFrame(parent, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(14, 8))
+
+        ctk.CTkLabel(header, text="🔇  VAD 靜音分割", font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color=COLORS["text_light"]).pack(side="left")
+
+        slider_row = ctk.CTkFrame(parent, fg_color="transparent")
+        slider_row.pack(fill="x", padx=16, pady=(0, 14))
+
+        self.vad_lbl = ctk.CTkLabel(slider_row, text="1.5s", font=ctk.CTkFont(size=13), width=44)
+        self.vad_lbl.pack(side="left")
+
+        ctk.CTkSlider(slider_row, variable=self.vad_duration_var, from_=0.5, to=3.0,
+                     width=260, button_length=20,
+                     command=lambda v: self.vad_lbl.configure(text=f"{v:.1f}s")).pack(side="left", padx=12)
+
+    def _test_connection(self, url_var, prefix):
+        dot = getattr(self, f"{prefix}_dot")
+        lbl = getattr(self, f"{prefix}_lbl")
+
+        lbl.configure(text="測試中...")
+        dot.configure(text_color=COLORS["warning"])
+
+        def test():
+            try:
+                resp = requests.get(f"{url_var.get()}/models", timeout=5)
+                if resp.status_code == 200:
+                    self.after(0, lambda: [lbl.configure(text="已連接"), dot.configure(text_color=COLORS["success"])])
+                else:
+                    self.after(0, lambda: [lbl.configure(text=f"錯誤 {resp.status_code}"), dot.configure(text_color=COLORS["danger"])])
+            except Exception:
+                self.after(0, lambda: [lbl.configure(text="連接失敗"), dot.configure(text_color=COLORS["danger"])])
+
+        threading.Thread(target=test, daemon=True).start()
 
     def _handle_save(self):
         if self.on_save_settings:
             self.on_save_settings()
+            if self.show_info:
+                self.show_info("完成", "設定已儲存")
 
-    def _handle_fetch_models(self):
-        if self.on_fetch_models:
-            self.on_fetch_models()
+    def set_asr_status(self, connected):
+        if connected:
+            self.asr_lbl.configure(text="已連接")
+            self.asr_dot.configure(text_color=COLORS["success"])
         else:
-            self._default_fetch_models()
+            self.asr_lbl.configure(text="未連接")
+            self.asr_dot.configure(text_color=COLORS["text_dim"])
 
-    def _default_fetch_models(self):
-        def fetch():
-            try:
-                url = self.asr_url_var.get()
-                response = requests.get(f"{url}/models", timeout=5)
-                if response.status_code == 200:
-                    models = response.json().get("data", [])
-                    model_ids = [m.get("id", "") for m in models]
-                    self.after(0, lambda: self.show_info("Available Models", "\n".join(model_ids)))
-                else:
-                    self.after(0, lambda: self.show_error("Error", f"API: {response.status_code}"))
-            except Exception as e:
-                self.after(0, lambda: self.show_error("Error", f"Cannot connect: {e}"))
-        threading.Thread(target=fetch, daemon=True).start()
+    def set_translate_status(self, connected):
+        if connected:
+            self.trans_lbl.configure(text="已連接")
+            self.trans_dot.configure(text_color=COLORS["success"])
+        else:
+            self.trans_lbl.configure(text="未連接")
+            self.trans_dot.configure(text_color=COLORS["text_dim"])

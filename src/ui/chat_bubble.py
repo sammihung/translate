@@ -32,43 +32,43 @@ class ChatBubbleManager:
         return str(uuid.uuid4())
 
     def _create_bubble_widget(self, bubble_id, speaker_name, original, translated, speaker_id):
-        align, bubble_color, text_color = (
-            ("w", "#1e293b", COLORS["primary"]) if speaker_id == 1
-            else ("e", "#064e3b", COLORS["success"])
-        )
+        is_left = speaker_id == 1
+        align = "w" if is_left else "e"
+        bubble_color = COLORS["bubble_left"] if is_left else COLORS["bubble_right"]
+        accent_color = COLORS["primary"] if is_left else COLORS["success"]
 
         container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
-        container.pack(fill="x", pady=10, padx=10)
+        container.pack(fill="x", pady=(8, 8), padx=8)
 
-        bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=15)
-        bubble.pack(anchor=align, ipadx=10, ipady=10)
+        bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=16)
+        bubble.pack(anchor=align, ipadx=6, ipady=6)
 
         header = ctk.CTkFrame(bubble, fg_color="transparent")
-        header.pack(fill="x", padx=10, pady=(5, 5))
+        header.pack(fill="x", padx=14, pady=(10, 6))
 
-        side_align = "left" if speaker_id == 1 else "right"
+        side_align = "left" if is_left else "right"
         ctk.CTkLabel(
-            header, text=speaker_name, font=ctk.CTkFont(size=11, weight="bold"),
-            text_color=text_color
+            header, text=speaker_name, font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=accent_color
         ).pack(side=side_align)
         ctk.CTkLabel(
             header, text=datetime.now().strftime("%H:%M:%S"),
-            font=ctk.CTkFont(family="Courier", size=10),
-            text_color=COLORS["text_muted"]
-        ).pack(side=side_align, padx=10)
+            font=ctk.CTkFont(family="Courier", size=11),
+            text_color=COLORS["text_dim"]
+        ).pack(side=side_align, padx=12)
 
         ctk.CTkLabel(
             bubble, text=original,
             font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"),
-            text_color=COLORS["text_muted"], wraplength=500, justify="left"
-        ).pack(anchor=align, padx=10, pady=(0, 2))
+            text_color=COLORS["text_muted"], wraplength=560, justify="left"
+        ).pack(anchor=align, padx=14, pady=(0, 4))
 
         trans_label = ctk.CTkLabel(
             bubble, text=translated,
             font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"),
-            text_color=COLORS["text_light"], wraplength=500, justify="left"
+            text_color=COLORS["text_light"], wraplength=560, justify="left"
         )
-        trans_label.pack(anchor=align, padx=10, pady=(0, 5))
+        trans_label.pack(anchor=align, padx=14, pady=(0, 10))
 
         self.chat_bubbles[bubble_id] = trans_label
         self.bubble_containers[bubble_id] = container
@@ -96,9 +96,15 @@ class ChatBubbleManager:
             trans_label.configure(font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"))
             if bubble_id in self.bubble_containers:
                 for widget in self.bubble_containers[bubble_id].winfo_children():
-                    if isinstance(widget, ctk.CTkLabel):
-                        if widget.cget("font") and "italic" in str(widget.cget("font")):
-                            widget.configure(font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"))
+                    if isinstance(widget, ctk.CTkFrame):
+                        for child in widget.winfo_children():
+                            if isinstance(child, ctk.CTkLabel):
+                                try:
+                                    font_str = str(child.cget("font"))
+                                    if "italic" in font_str:
+                                        child.configure(font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"))
+                                except Exception:
+                                    pass
 
     def clear_cleaned_ids(self):
         self.cleaned_bubble_ids.clear()
