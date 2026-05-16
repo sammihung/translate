@@ -1,7 +1,7 @@
 import customtkinter as ctk
 import requests
 import threading
-from ui.theme import COLORS
+from ui.theme import COLORS, FONT
 
 
 class SettingsView(ctk.CTkFrame):
@@ -29,7 +29,7 @@ class SettingsView(ctk.CTkFrame):
     def _build_ui(self):
         row = 0
 
-        ctk.CTkLabel(self, text="API 設定", font=ctk.CTkFont(size=20, weight="bold"),
+        ctk.CTkLabel(self, text="API 設定", font=ctk.CTkFont(family=FONT["title"][0], size=20, weight="bold"),
                     text_color=COLORS["text_light"]).grid(row=row, column=0, sticky="w", pady=(0, 16))
         row += 1
 
@@ -57,7 +57,7 @@ class SettingsView(ctk.CTkFrame):
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
         btn_row.grid(row=row, column=0, sticky="e", pady=(8, 0))
 
-        ctk.CTkButton(btn_row, text="💾  儲存設定", height=40, font=ctk.CTkFont(size=14),
+        ctk.CTkButton(btn_row, text="💾  儲存設定", height=40, font=ctk.CTkFont(family=FONT["body"][0], size=14),
                      fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"],
                      command=self._handle_save).pack()
 
@@ -65,14 +65,14 @@ class SettingsView(ctk.CTkFrame):
         header = ctk.CTkFrame(parent, fg_color="transparent")
         header.pack(fill="x", padx=16, pady=(14, 8))
 
-        ctk.CTkLabel(header, text=title, font=ctk.CTkFont(size=15, weight="bold"),
+        ctk.CTkLabel(header, text=title, font=ctk.CTkFont(family=FONT["subheading"][0], size=15, weight="bold"),
                      text_color=COLORS["text_light"]).pack(side="left")
 
-        status_dot = ctk.CTkLabel(header, text="●", font=ctk.CTkFont(size=12),
+        status_dot = ctk.CTkLabel(header, text="●", font=ctk.CTkFont(family=FONT["small"][0], size=12),
                                    text_color=COLORS["text_dim"])
         status_dot.pack(side="right", padx=(8, 0))
 
-        status_lbl = ctk.CTkLabel(header, text="未連接", font=ctk.CTkFont(size=12),
+        status_lbl = ctk.CTkLabel(header, text="未連接", font=ctk.CTkFont(family=FONT["small"][0], size=12),
                                    text_color=COLORS["text_dim"])
         status_lbl.pack(side="right")
 
@@ -88,16 +88,16 @@ class SettingsView(ctk.CTkFrame):
         for label, var, placeholder in fields:
             row = ctk.CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", padx=16, pady=4)
-            ctk.CTkLabel(row, text=label, width=80, font=ctk.CTkFont(size=13),
+            ctk.CTkLabel(row, text=label, width=80, font=ctk.CTkFont(family=FONT["body"][0], size=13),
                         text_color=COLORS["text_muted"]).pack(side="left")
-            ctk.CTkEntry(row, textvariable=var, height=34, font=ctk.CTkFont(size=13),
+            ctk.CTkEntry(row, textvariable=var, height=34, font=ctk.CTkFont(family=FONT["body"][0], size=13),
                         fg_color=COLORS["bg_input"], placeholder_text=placeholder,
                         corner_radius=8).pack(side="left", fill="x", expand=True, padx=(8, 0))
 
         btn_row = ctk.CTkFrame(parent, fg_color="transparent")
         btn_row.pack(fill="x", padx=16, pady=(8, 14))
 
-        ctk.CTkButton(btn_row, text="測試連接", width=90, height=32, font=ctk.CTkFont(size=12),
+        ctk.CTkButton(btn_row, text="測試連接", width=90, height=32, font=ctk.CTkFont(family=FONT["small"][0], size=12),
                       fg_color=COLORS["primary_muted"], hover_color=COLORS["primary"],
                       command=lambda: self._test_connection(url_var, prefix)).pack(side="left")
 
@@ -105,13 +105,13 @@ class SettingsView(ctk.CTkFrame):
         header = ctk.CTkFrame(parent, fg_color="transparent")
         header.pack(fill="x", padx=16, pady=(14, 8))
 
-        ctk.CTkLabel(header, text="🔇  VAD 靜音分割", font=ctk.CTkFont(size=15, weight="bold"),
+        ctk.CTkLabel(header, text="🔇  VAD 靜音分割", font=ctk.CTkFont(family=FONT["subheading"][0], size=15, weight="bold"),
                      text_color=COLORS["text_light"]).pack(side="left")
 
         slider_row = ctk.CTkFrame(parent, fg_color="transparent")
         slider_row.pack(fill="x", padx=16, pady=(0, 14))
 
-        self.vad_lbl = ctk.CTkLabel(slider_row, text="1.5s", font=ctk.CTkFont(size=13), width=44)
+        self.vad_lbl = ctk.CTkLabel(slider_row, text="1.5s", font=ctk.CTkFont(family=FONT["body"][0], size=13), width=44)
         self.vad_lbl.pack(side="left")
 
         ctk.CTkSlider(slider_row, variable=self.vad_duration_var, from_=0.5, to=3.0,

@@ -53,10 +53,10 @@ class AppConfig(BaseSettings):
         description="Target app name for per-app capture"
     )
     
-    # VAD
-    vad_rms_threshold: float = Field(default=150.0)
-    vad_silence_duration: float = Field(default=1.5)
-    vad_max_chunk_duration: float = Field(default=8.0)
+    # VAD (Silero)
+    vad_silence_duration: float = Field(default=0.8)
+    vad_speech_duration: float = Field(default=2.0)
+    vad_max_chunk_duration: float = Field(default=4.0)
     
     # Logging
     log_level: str = Field(default="INFO")

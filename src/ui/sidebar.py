@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from ui.theme import COLORS, SIDEBAR_EXPANDED_WIDTH, SIDEBAR_COLLAPSED_WIDTH, NAV_ITEMS
+from ui.theme import COLORS, SIDEBAR_EXPANDED_WIDTH, SIDEBAR_COLLAPSED_WIDTH, NAV_ITEMS, FONT
 
 
 class Sidebar(ctk.CTkFrame):
@@ -28,12 +28,12 @@ class Sidebar(ctk.CTkFrame):
         self.toggle_btn = ctk.CTkButton(
             header_frame, text="☰", width=44, height=44, corner_radius=10,
             fg_color="transparent", hover_color=COLORS["bg_panel"],
-            command=self.toggle_menu, font=ctk.CTkFont(size=20)
+            command=self.toggle_menu, font=ctk.CTkFont(family=FONT["heading"][0], size=20)
         )
         self.toggle_btn.pack(side="left")
 
         self.logo_label = ctk.CTkLabel(
-            header_frame, text="🌊 QwenASR", font=ctk.CTkFont(size=20, weight="bold"),
+            header_frame, text="🌊 QwenASR", font=ctk.CTkFont(family=FONT["title"][0], size=20, weight="bold"),
             text_color=COLORS["primary"]
         )
         self.logo_label.pack(side="left", padx=12)
@@ -41,7 +41,7 @@ class Sidebar(ctk.CTkFrame):
     def _build_nav(self):
         for idx, (view_id, icon, text) in enumerate(NAV_ITEMS, start=1):
             btn = ctk.CTkButton(
-                self, text=f"{icon}  {text}", font=ctk.CTkFont(size=15),
+                self, text=f"{icon}  {text}", font=ctk.CTkFont(family=FONT["body"][0], size=15),
                 fg_color="transparent", text_color=COLORS["text_muted"],
                 hover_color=COLORS["bg_panel"], anchor="w", height=48,
                 corner_radius=10, command=lambda vid=view_id: self._on_nav(vid)
@@ -52,7 +52,7 @@ class Sidebar(ctk.CTkFrame):
 
     def _build_actions(self):
         self.floating_btn = ctk.CTkButton(
-            self, text="🪟  浮動字幕模式", font=ctk.CTkFont(size=15),
+            self, text="🪟  浮動字幕模式", font=ctk.CTkFont(family=FONT["body"][0], size=15),
             fg_color=COLORS["primary"], text_color=COLORS["text_light"],
             hover_color=COLORS["primary_hover"], anchor="w", height=48,
             corner_radius=10, command=self._on_floating
@@ -60,7 +60,7 @@ class Sidebar(ctk.CTkFrame):
         self.floating_btn.grid(row=4, column=0, padx=12, pady=4, sticky="ew")
 
         self.font_btn = ctk.CTkButton(
-            self, text="🔤  文字大小：標準", font=ctk.CTkFont(size=15),
+            self, text="🔤  文字大小：標準", font=ctk.CTkFont(family=FONT["body"][0], size=15),
             fg_color=COLORS["bg_panel"], text_color=COLORS["text_light"],
             hover_color=COLORS["primary"], anchor="w", height=48,
             corner_radius=10, command=self._on_font
@@ -69,7 +69,7 @@ class Sidebar(ctk.CTkFrame):
 
     def _build_status(self):
         self.status_indicator = ctk.CTkLabel(
-            self, text="🟢  系統就緒", font=ctk.CTkFont(size=13),
+            self, text="🟢  系統就緒", font=ctk.CTkFont(family=FONT["small"][0], size=13),
             text_color=COLORS["success"]
         )
         self.status_indicator.grid(row=6, column=0, padx=20, pady=(8, 20), sticky="w")

@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from datetime import datetime
-from ui.theme import COLORS, MAX_BUBBLES, MAX_CLEANED_IDS
+from ui.theme import COLORS, MAX_BUBBLES, MAX_CLEANED_IDS, CHAT_FONT
 
 
 class ChatBubbleManager:
@@ -35,40 +35,42 @@ class ChatBubbleManager:
         is_left = speaker_id == 1
         align = "w" if is_left else "e"
         bubble_color = COLORS["bubble_left"] if is_left else COLORS["bubble_right"]
-        accent_color = COLORS["primary"] if is_left else COLORS["success"]
+        accent_color = COLORS["primary"] if is_left else "#38BDF8"
 
         container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
-        container.pack(fill="x", pady=(8, 8), padx=8)
+        container.pack(fill="x", pady=(10, 10), padx=15)
 
-        bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=16)
-        bubble.pack(anchor=align, ipadx=6, ipady=6)
+        bubble = ctk.CTkFrame(container, fg_color=bubble_color, corner_radius=20)
+        bubble.pack(anchor=align, ipadx=10, ipady=8)
 
         header = ctk.CTkFrame(bubble, fg_color="transparent")
-        header.pack(fill="x", padx=14, pady=(10, 6))
+        header.pack(fill="x", padx=10, pady=(6, 4))
 
         side_align = "left" if is_left else "right"
         ctk.CTkLabel(
-            header, text=speaker_name, font=ctk.CTkFont(size=12, weight="bold"),
+            header, text=speaker_name,
+            font=ctk.CTkFont(family=CHAT_FONT, size=12, weight="bold"),
             text_color=accent_color
         ).pack(side=side_align)
+
         ctk.CTkLabel(
-            header, text=datetime.now().strftime("%H:%M:%S"),
-            font=ctk.CTkFont(family="Courier", size=11),
+            header, text=datetime.now().strftime("%H:%M"),
+            font=ctk.CTkFont(family=CHAT_FONT, size=11),
             text_color=COLORS["text_dim"]
-        ).pack(side=side_align, padx=12)
+        ).pack(side=side_align, padx=8)
 
         ctk.CTkLabel(
             bubble, text=original,
-            font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"),
-            text_color=COLORS["text_muted"], wraplength=560, justify="left"
-        ).pack(anchor=align, padx=14, pady=(0, 4))
+            font=ctk.CTkFont(family=CHAT_FONT, size=self.font_sizes["original"], slant="italic"),
+            text_color=COLORS["text_muted"], wraplength=500, justify="left"
+        ).pack(anchor=align, padx=12, pady=(0, 2))
 
         trans_label = ctk.CTkLabel(
             bubble, text=translated,
-            font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"),
-            text_color=COLORS["text_light"], wraplength=560, justify="left"
+            font=ctk.CTkFont(family=CHAT_FONT, size=self.font_sizes["translated"], weight="bold"),
+            text_color=COLORS["text_light"], wraplength=500, justify="left"
         )
-        trans_label.pack(anchor=align, padx=14, pady=(0, 10))
+        trans_label.pack(anchor=align, padx=12, pady=(0, 8))
 
         self.chat_bubbles[bubble_id] = trans_label
         self.bubble_containers[bubble_id] = container
@@ -93,7 +95,7 @@ class ChatBubbleManager:
 
     def refresh_fonts(self):
         for bubble_id, trans_label in self.chat_bubbles.items():
-            trans_label.configure(font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"))
+            trans_label.configure(font=ctk.CTkFont(family=CHAT_FONT, size=self.font_sizes["translated"], weight="bold"))
             if bubble_id in self.bubble_containers:
                 for widget in self.bubble_containers[bubble_id].winfo_children():
                     if isinstance(widget, ctk.CTkFrame):
@@ -102,7 +104,7 @@ class ChatBubbleManager:
                                 try:
                                     font_str = str(child.cget("font"))
                                     if "italic" in font_str:
-                                        child.configure(font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"))
+                                        child.configure(font=ctk.CTkFont(family=CHAT_FONT, size=self.font_sizes["original"], slant="italic"))
                                 except Exception:
                                     pass
 

@@ -1,6 +1,6 @@
 import customtkinter as ctk
 import numpy as np
-from ui.theme import COLORS
+from ui.theme import COLORS, FONT
 
 
 class AudioLevelMeter(ctk.CTkFrame):
@@ -48,10 +48,10 @@ class SourceCard(ctk.CTkFrame):
         inner = ctk.CTkFrame(self, fg_color="transparent")
         inner.grid(row=0, column=0)
 
-        self.icon_label = ctk.CTkLabel(inner, text=icon, font=ctk.CTkFont(size=26))
+        self.icon_label = ctk.CTkLabel(inner, text=icon, font=ctk.CTkFont(family="Segoe UI Emoji", size=26))
         self.icon_label.grid(row=0, column=0, pady=(8, 4))
 
-        self.text_label = ctk.CTkLabel(inner, text=label, font=ctk.CTkFont(size=12), text_color=COLORS["text_muted"])
+        self.text_label = ctk.CTkLabel(inner, text=label, font=ctk.CTkFont(family=FONT["small"][0], size=12), text_color=COLORS["text_muted"])
         self.text_label.grid(row=1, column=0, pady=(0, 8))
 
         for widget in [self, self.icon_label, self.text_label, inner]:
@@ -80,10 +80,10 @@ class AppItem(ctk.CTkFrame):
         self.name = name
         self.on_select = on_select
 
-        ctk.CTkLabel(self, text="🎵", font=ctk.CTkFont(size=14)).pack(side="left", padx=8, pady=6)
-        ctk.CTkLabel(self, text=name, font=ctk.CTkFont(size=12), text_color=COLORS["text_light"]).pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(self, text="🎵", font=ctk.CTkFont(family="Segoe UI Emoji", size=14)).pack(side="left", padx=8, pady=6)
+        ctk.CTkLabel(self, text=name, font=ctk.CTkFont(family=FONT["small"][0], size=12), text_color=COLORS["text_light"]).pack(side="left", fill="x", expand=True)
 
-        btn = ctk.CTkButton(self, text="選擇", width=50, height=28, font=ctk.CTkFont(size=11),
+        btn = ctk.CTkButton(self, text="選擇", width=50, height=28, font=ctk.CTkFont(family=FONT["tiny"][0], size=11),
                            fg_color=COLORS["primary_muted"], hover_color=COLORS["primary"],
                            command=lambda: on_select(name) if on_select else None)
         btn.pack(side="right", padx=8, pady=6)
@@ -92,7 +92,7 @@ class AppItem(ctk.CTkFrame):
 class LangButton(ctk.CTkButton):
 
     def __init__(self, master, text, value, on_click=None, **kwargs):
-        super().__init__(master, text=text, width=52, height=32, font=ctk.CTkFont(size=12),
+        super().__init__(master, text=text, width=52, height=32, font=ctk.CTkFont(family=FONT["small"][0], size=12),
                         fg_color=COLORS["bg_panel"], hover_color=COLORS["primary_muted"],
                         text_color=COLORS["text_muted"], corner_radius=8, **kwargs)
         self.value = value

@@ -1,3 +1,8 @@
+import platform
+
+SYSTEM_FONT = "SF Pro Display" if platform.system() == "Darwin" else "Segoe UI Variable Display"
+CHAT_FONT = "SF Pro Text" if platform.system() == "Darwin" else "Segoe UI"
+
 FONT_PRESETS = [
     {"original": 14, "translated": 18, "label": "小"},
     {"original": 16, "translated": 20, "label": "標準"},
@@ -8,23 +13,23 @@ FONT_PRESETS = [
 DEFAULT_FONT_PRESET_INDEX = 1
 
 COLORS = {
-    "bg_dark": "#0b0f19",
-    "bg_panel": "#1e293b",
-    "bg_panel_light": "#273449",
-    "bg_input": "#0f172a",
-    "primary": "#3b82f6",
-    "primary_hover": "#2563eb",
-    "primary_muted": "#1e3a8a",
-    "danger": "#ef4444",
-    "danger_hover": "#dc2626",
-    "success": "#10b981",
-    "warning": "#f59e0b",
-    "text_light": "#f8fafc",
-    "text_muted": "#94a3b8",
-    "text_dim": "#64748b",
-    "border": "#334155",
-    "bubble_left": "#1e293b",
-    "bubble_right": "#064e3b",
+    "bg_dark": "#0B0F19",
+    "bg_panel": "#172033",
+    "bg_panel_light": "#1E2A42",
+    "bg_input": "#0A0E17",
+    "primary": "#3B82F6",
+    "primary_hover": "#60A5FA",
+    "primary_muted": "#1E3A8A",
+    "danger": "#F43F5E",
+    "danger_hover": "#E11D48",
+    "success": "#10B981",
+    "warning": "#F59E0B",
+    "text_light": "#F8FAFC",
+    "text_muted": "#94A3B8",
+    "text_dim": "#475569",
+    "border": "#1E293B",
+    "bubble_left": "#1E293B",
+    "bubble_right": "#164E63",
 }
 
 SIDEBAR_EXPANDED_WIDTH = 220
@@ -47,15 +52,15 @@ MAX_FLOATING_BUBBLES = 50
 MAX_CLEANED_IDS = 200
 
 FONT = {
-    "title": ("size", 20, "weight", "bold"),
-    "heading": ("size", 16, "weight", "bold"),
-    "subheading": ("size", 14, "weight", "bold"),
-    "body": ("size", 13),
-    "body_bold": ("size", 13, "weight", "bold"),
-    "small": ("size", 12),
-    "tiny": ("size", 11),
-    "icon_large": ("size", 22),
-    "icon": ("size", 16),
+    "title": (SYSTEM_FONT, 22, "bold"),
+    "heading": (SYSTEM_FONT, 16, "bold"),
+    "subheading": (SYSTEM_FONT, 14, "bold"),
+    "body": (SYSTEM_FONT, 13),
+    "body_bold": (SYSTEM_FONT, 13, "bold"),
+    "small": (SYSTEM_FONT, 12),
+    "tiny": (SYSTEM_FONT, 11),
+    "icon_large": ("Segoe UI Emoji", 22),
+    "icon": ("Segoe UI Emoji", 16),
 }
 
 SPACING = {

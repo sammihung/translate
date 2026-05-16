@@ -24,9 +24,9 @@ class AudioManager:
         self.vad = SimpleVAD()
         self.on_audio_level: Optional[Callable[[float], None]] = None
 
-    def set_vad_params(self, rms_threshold=150.0, silence_duration=1.5, max_duration=8.0):
-        self.vad = SimpleVAD(rms_threshold, silence_duration, max_duration)
-        logger.info(f"VAD params: RMS={rms_threshold}, silence={silence_duration}s, max={max_duration}s")
+    def set_vad_params(self, silence_duration=0.8, speech_duration=2.0, max_duration=4.0):
+        self.vad = SimpleVAD(silence_duration=silence_duration, speech_duration=speech_duration, max_chunk_duration=max_duration)
+        logger.info(f"VAD params: silence={silence_duration}s, speech={speech_duration}s, max={max_duration}s")
 
     def set_audio_source(self, source, target_app=""):
         self.audio_source = source

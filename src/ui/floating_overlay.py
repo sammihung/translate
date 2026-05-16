@@ -1,7 +1,7 @@
 import tkinter as tk
 import customtkinter as ctk
 from core.logging_config import get_logger
-from ui.theme import COLORS, MAX_FLOATING_BUBBLES
+from ui.theme import COLORS, MAX_FLOATING_BUBBLES, CHAT_FONT
 from datetime import datetime
 
 logger = get_logger(__name__)
@@ -91,13 +91,13 @@ class FloatingOverlay:
 
         ctk.CTkLabel(
             bubble, text=original,
-            font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"),
+            font=ctk.CTkFont(family=CHAT_FONT, size=self.font_sizes["original"], slant="italic"),
             text_color=COLORS["text_muted"], wraplength=680, justify="left"
         ).pack(anchor=align, padx=12, pady=(0, 4))
 
         trans_label = ctk.CTkLabel(
             bubble, text=translated,
-            font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"),
+            font=ctk.CTkFont(family=CHAT_FONT, size=self.font_sizes["translated"], weight="bold"),
             text_color=COLORS["text_light"], wraplength=680, justify="left"
         )
         trans_label.pack(anchor=align, padx=12, pady=(0, 8))
@@ -134,7 +134,7 @@ class FloatingOverlay:
         if not self.is_open():
             return
         for bubble_id, trans_label in self.floating_chat_bubbles.items():
-            trans_label.configure(font=ctk.CTkFont(size=self.font_sizes["translated"], weight="bold"))
+            trans_label.configure(font=ctk.CTkFont(family=CHAT_FONT, size=self.font_sizes["translated"], weight="bold"))
             if bubble_id in self.floating_bubble_containers:
                 for widget in self.floating_bubble_containers[bubble_id].winfo_children():
                     if isinstance(widget, ctk.CTkFrame):
@@ -143,6 +143,6 @@ class FloatingOverlay:
                                 try:
                                     font_str = str(child.cget("font"))
                                     if "italic" in font_str:
-                                        child.configure(font=ctk.CTkFont(size=self.font_sizes["original"], slant="italic"))
+                                        child.configure(font=ctk.CTkFont(family=CHAT_FONT, size=self.font_sizes["original"], slant="italic"))
                                 except Exception:
                                     pass

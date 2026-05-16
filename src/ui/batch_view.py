@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from ui.theme import COLORS
+from ui.theme import COLORS, FONT
 
 
 class BatchView(ctk.CTkFrame):
@@ -13,7 +13,7 @@ class BatchView(ctk.CTkFrame):
 
         ctk.CTkLabel(
             self, text="批量音檔轉字幕",
-            font=ctk.CTkFont(size=22, weight="bold"),
+            font=ctk.CTkFont(family=FONT["title"][0], size=22, weight="bold"),
             text_color=COLORS["text_light"]
         ).grid(row=0, column=0, sticky="w", pady=(0, 20))
 
@@ -27,11 +27,11 @@ class BatchView(ctk.CTkFrame):
         inner = ctk.CTkFrame(dropzone, fg_color="transparent")
         inner.place(relx=0.5, rely=0.5, anchor="center")
 
-        ctk.CTkLabel(inner, text="☁️", font=ctk.CTkFont(size=40)).pack(pady=(0, 8))
-        ctk.CTkLabel(inner, text="點擊此處瀏覽檔案", font=ctk.CTkFont(size=16),
+        ctk.CTkLabel(inner, text="☁️", font=ctk.CTkFont(family="Segoe UI Emoji", size=40)).pack(pady=(0, 8))
+        ctk.CTkLabel(inner, text="點擊此處瀏覽檔案", font=ctk.CTkFont(family=FONT["heading"][0], size=16),
                      text_color=COLORS["text_light"]).pack()
         ctk.CTkLabel(inner, text="支援 MP3, WAV, MP4, M4A, AAC, FLAC",
-                     font=ctk.CTkFont(size=13), text_color=COLORS["text_muted"]).pack(pady=(4, 0))
+                     font=ctk.CTkFont(family=FONT["body"][0], size=13), text_color=COLORS["text_muted"]).pack(pady=(4, 0))
 
         for widget in [dropzone] + dropzone.winfo_children() + inner.winfo_children():
             widget.bind("<Button-1>", lambda e: self._handle_batch())
@@ -41,12 +41,12 @@ class BatchView(ctk.CTkFrame):
 
         ctk.CTkCheckBox(
             settings_panel, text="產生雙語 SRT 字幕檔",
-            text_color=COLORS["text_light"], font=ctk.CTkFont(size=14),
+            text_color=COLORS["text_light"], font=ctk.CTkFont(family=FONT["body"][0], size=14),
             checkbox_width=22, checkbox_height=22
         ).pack(anchor="w", padx=20, pady=16)
 
         ctk.CTkButton(
-            self, text="▶  選擇檔案並轉換", height=48, font=ctk.CTkFont(size=15),
+            self, text="▶  選擇檔案並轉換", height=48, font=ctk.CTkFont(family=FONT["body"][0], size=15),
             fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"],
             corner_radius=12,
             command=self._handle_batch

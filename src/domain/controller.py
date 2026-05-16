@@ -111,11 +111,10 @@ class AppController:
             
             if "vad_duration" in settings:
                 vad_duration: float = settings["vad_duration"]
-                rms_threshold: float = 250.0 - (vad_duration - 0.5) * 75.0
                 self.audio_mgr.set_vad_params(
-                    rms_threshold=rms_threshold,
                     silence_duration=vad_duration,
-                    max_duration=8.0
+                    speech_duration=config.vad_speech_duration,
+                    max_duration=config.vad_max_chunk_duration
                 )
             
             self._save_env()

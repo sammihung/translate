@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from ui.theme import COLORS
+from ui.theme import COLORS, FONT
 from ui.components import AudioLevelMeter, SourceCard, AppItem, LangButton
 
 
@@ -37,7 +37,7 @@ class RealtimeView(ctk.CTkFrame):
         left = ctk.CTkFrame(top, fg_color="transparent")
         left.grid(row=0, column=0, sticky="nw", padx=(16, 12), pady=14)
 
-        ctk.CTkLabel(left, text="音訊來源", font=ctk.CTkFont(size=13, weight="bold"),
+        ctk.CTkLabel(left, text="音訊來源", font=ctk.CTkFont(family=FONT["subheading"][0], size=13, weight="bold"),
                      text_color=COLORS["text_muted"]).pack(anchor="w", pady=(0, 8))
 
         cards = ctk.CTkFrame(left, fg_color="transparent")
@@ -59,13 +59,13 @@ class RealtimeView(ctk.CTkFrame):
         center = ctk.CTkFrame(top, fg_color="transparent")
         center.grid(row=0, column=1, sticky="n", padx=12, pady=14)
 
-        ctk.CTkLabel(center, text="語言設定", font=ctk.CTkFont(size=13, weight="bold"),
+        ctk.CTkLabel(center, text="語言設定", font=ctk.CTkFont(family=FONT["subheading"][0], size=13, weight="bold"),
                      text_color=COLORS["text_muted"]).pack(anchor="w", pady=(0, 8))
 
         src_row = ctk.CTkFrame(center, fg_color="transparent")
         src_row.pack(anchor="w", pady=(0, 6))
 
-        ctk.CTkLabel(src_row, text="來源", font=ctk.CTkFont(size=12),
+        ctk.CTkLabel(src_row, text="來源", font=ctk.CTkFont(family=FONT["small"][0], size=12),
                      text_color=COLORS["text_dim"], width=36).pack(side="left")
 
         self.src_btns = {}
@@ -78,7 +78,7 @@ class RealtimeView(ctk.CTkFrame):
         tgt_row = ctk.CTkFrame(center, fg_color="transparent")
         tgt_row.pack(anchor="w")
 
-        ctk.CTkLabel(tgt_row, text="目標", font=ctk.CTkFont(size=12),
+        ctk.CTkLabel(tgt_row, text="目標", font=ctk.CTkFont(family=FONT["small"][0], size=12),
                      text_color=COLORS["text_dim"], width=36).pack(side="left")
 
         self.tgt_btns = {}
@@ -91,10 +91,10 @@ class RealtimeView(ctk.CTkFrame):
         right = ctk.CTkFrame(top, fg_color="transparent")
         right.grid(row=0, column=2, sticky="ne", padx=(12, 16), pady=14)
 
-        self.status_dot = ctk.CTkLabel(right, text="●", font=ctk.CTkFont(size=14), text_color=COLORS["success"])
+        self.status_dot = ctk.CTkLabel(right, text="●", font=ctk.CTkFont(family=FONT["body"][0], size=14), text_color=COLORS["success"])
         self.status_dot.pack(side="left")
 
-        self.status_label = ctk.CTkLabel(right, text="就緒", font=ctk.CTkFont(size=13),
+        self.status_label = ctk.CTkLabel(right, text="就緒", font=ctk.CTkFont(family=FONT["body"][0], size=13),
                                           text_color=COLORS["text_muted"])
         self.status_label.pack(side="left", padx=8)
 
@@ -109,7 +109,7 @@ class RealtimeView(ctk.CTkFrame):
 
         self.record_btn = ctk.CTkButton(
             bottom, text="🎤", width=56, height=56, corner_radius=28,
-            font=ctk.CTkFont(size=24), fg_color=COLORS["danger"],
+            font=ctk.CTkFont(family="Segoe UI Emoji", size=24), fg_color=COLORS["danger"],
             hover_color=COLORS["danger_hover"],
             command=self._handle_record, state="disabled"
         )
@@ -118,7 +118,7 @@ class RealtimeView(ctk.CTkFrame):
         info = ctk.CTkFrame(bottom, fg_color="transparent")
         info.pack(side="left", padx=8)
 
-        self.record_label = ctk.CTkLabel(info, text="準備就緒", font=ctk.CTkFont(size=13),
+        self.record_label = ctk.CTkLabel(info, text="準備就緒", font=ctk.CTkFont(family=FONT["body"][0], size=13),
                                           text_color=COLORS["text_muted"])
         self.record_label.pack(anchor="w")
 
@@ -127,7 +127,7 @@ class RealtimeView(ctk.CTkFrame):
 
         ctk.CTkButton(
             bottom, text="匯出 SRT", width=100, height=36,
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(family=FONT["body"][0], size=13),
             fg_color=COLORS["primary"], hover_color=COLORS["primary_hover"],
             command=self._handle_export
         ).pack(side="right", padx=16)
@@ -171,7 +171,7 @@ class RealtimeView(ctk.CTkFrame):
         for w in self.app_list.winfo_children():
             w.destroy()
 
-        ctk.CTkLabel(self.app_list, text="掃描中...", font=ctk.CTkFont(size=12),
+        ctk.CTkLabel(self.app_list, text="掃描中...", font=ctk.CTkFont(family=FONT["small"][0], size=12),
                      text_color=COLORS["text_muted"]).pack(pady=12)
 
         if self.on_get_apps:
@@ -183,7 +183,7 @@ class RealtimeView(ctk.CTkFrame):
             w.destroy()
 
         if not apps:
-            ctk.CTkLabel(self.app_list, text="沒有播放中的程式", font=ctk.CTkFont(size=12),
+            ctk.CTkLabel(self.app_list, text="沒有播放中的程式", font=ctk.CTkFont(family=FONT["small"][0], size=12),
                          text_color=COLORS["text_muted"]).pack(pady=12)
             return
 
