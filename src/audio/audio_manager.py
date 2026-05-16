@@ -52,13 +52,18 @@ class AudioManager:
             return None
 
         try:
-            wasapi_output = self.p.get_default_wasapi_device_info_by_index(role='eMultimedia')
-            loopback = self.p.get_loopback_device_info_by_index(wasapi_output['index'])
+            loopback = self.p.get_default_wasapi_loopback()
             logger.info(f"Loopback device: {loopback['name']} [index={loopback['index']}]")
             logger.debug(f"Loopback details: channels={loopback['maxInputChannels']}, rate={loopback['defaultSampleRate']}")
             return loopback
         except Exception as e:
             logger.error(f"Failed to find loopback device: {e}", exc_info=True)
+            try:
+                for dev in self.p.get_loopback_device_info_generator():
+                    logger.info(f"Found loopback device: {dev['name']} [index={dev['index']}]")
+                    return dev
+            except Exception as e2:
+                logger.error(f"Fallback loopback search also failed: {e2}")
             return None
 
     def get_audio_devices(self) -> List[str]:
