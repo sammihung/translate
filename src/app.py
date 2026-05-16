@@ -13,7 +13,9 @@ import os
 
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 
-logger = setup_logging(log_dir="logs", log_level=logging.INFO, console_output=True, file_output=True)
+log_level_str = getattr(config, 'log_level', 'INFO')
+log_level = getattr(logging, log_level_str.upper(), logging.INFO)
+logger = setup_logging(log_dir="logs", log_level=log_level, console_output=True, file_output=True)
 
 
 class App(ctk.CTk):

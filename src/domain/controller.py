@@ -308,10 +308,13 @@ class AppController:
                         continue
                     
                     try:
+                        logger.debug(f"Processing audio chunk: {len(audio_data)} samples, queue_size={self.audio_queue.qsize()}")
                         src_lang_param = getattr(self, 'src_lang', 'auto')
                         original, _, speaker = self.ai_ctrl.process_audio(
                             audio_data, src_lang=src_lang_param, skip_translation=True
                         )
+                        
+                        logger.debug(f"ASR result: '{original[:80]}' (len={len(original)})")
                         
                         if original and original.strip():
                             speaker_id = 1 if speaker is None else (1 if "SPEAKER_00" in str(speaker) else 2)

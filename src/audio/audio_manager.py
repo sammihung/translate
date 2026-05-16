@@ -16,6 +16,7 @@ class AudioManager:
         self.stream: Optional[pyaudio.Stream] = None
         self.is_recording: bool = False
         self._stream_lock = threading.Lock()
+        self._has_pyaudiowpatch: bool = False
 
         self.audio_source: str = "mic"
         self.target_app: str = ""
@@ -38,10 +39,27 @@ class AudioManager:
         try:
             import pyaudiowpatch
             self.p = pyaudiowpatch.PyAudio()
+            self._has_pyaudiowpatch = True
             logger.info("Using pyaudiowpatch (WASAPI loopback supported)")
         except ImportError:
             self.p = pyaudio.PyAudio()
+            self._has_pyaudiowpatch = False
             logger.info("Using pyaudio (mic only, no system audio)")
+
+    def _find_loopback_device(self) -> Optional[dict]:
+        if not self._has_pyaudiowpatch:
+            logger.error("pyaudiowpatch not available - cannot capture system audio")
+            return None
+
+        try:
+            wasapi_output = self.p.get_default_wasapi_device_info_by_index(role='eMultimedia')
+            loopback = self.p.get_loopback_device_info_by_index(wasapi_output['index'])
+            logger.info(f"Loopback device: {loopback['name']} [index={loopback['index']}]")
+            logger.debug(f"Loopback details: channels={loopback['maxInputChannels']}, rate={loopback['defaultSampleRate']}")
+            return loopback
+        except Exception as e:
+            logger.error(f"Failed to find loopback device: {e}", exc_info=True)
+            return None
 
     def get_audio_devices(self) -> List[str]:
         if self.audio_source == "mic":
@@ -135,6 +153,8 @@ class AudioManager:
             while self.is_recording:
                 data = self.stream.read(1024, exception_on_overflow=False)
                 audio_np = np.frombuffer(data, dtype=np.float32)
+                rms = np.sqrt(np.mean(audio_np ** 2)) * 1000
+                logger.debug(f"Mic chunk: RMS={rms:.1f}, samples={len(audio_np)}")
                 self._update_level(audio_np)
                 self.vad.process_chunk(audio_np, callback)
 
@@ -148,21 +168,42 @@ class AudioManager:
         self.is_recording = True
         self.vad.reset()
 
+        loopback = self._find_loopback_device()
+        if not loopback:
+            logger.error("Cannot start system recording - no loopback device found")
+            self.is_recording = False
+            return
+
+        loopback_rate = int(loopback['defaultSampleRate'])
+        loopback_channels = int(loopback['maxInputChannels'])
+        loopback_index = loopback['index']
+
         try:
             self.stream = self.p.open(
-                format=pyaudio.paInt16, channels=2, rate=48000,
-                input=True, input_device_index=None,
+                format=pyaudio.paInt16,
+                channels=loopback_channels,
+                rate=loopback_rate,
+                input=True,
+                input_device_index=loopback_index,
                 frames_per_buffer=1024
             )
-            logger.info("System loopback stream opened: 48kHz, Stereo")
+            logger.info(f"System loopback stream opened: {loopback_rate}Hz, {loopback_channels}ch, device={loopback_index}")
+
+            from librosa import resample as librosa_resample
+            target_rate = 16000
 
             while self.is_recording:
                 data = self.stream.read(1024, exception_on_overflow=False)
                 audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
-                audio_np = np.mean(audio_np.reshape(-1, 2), axis=1)
-                if len(audio_np) > 0:
-                    from librosa import resample
-                    audio_np = resample(audio_np, orig_sr=48000, target_sr=16000)
+
+                if loopback_channels > 1:
+                    audio_np = np.mean(audio_np.reshape(-1, loopback_channels), axis=1)
+
+                if loopback_rate != target_rate and len(audio_np) > 0:
+                    audio_np = librosa_resample(audio_np, orig_sr=loopback_rate, target_sr=target_rate)
+
+                rms = np.sqrt(np.mean(audio_np ** 2)) * 1000
+                logger.debug(f"System chunk: RMS={rms:.1f}, samples={len(audio_np)}, rate={loopback_rate}->{target_rate}")
                 self._update_level(audio_np)
                 self.vad.process_chunk(audio_np, callback)
 
@@ -176,7 +217,7 @@ class AudioManager:
             logger.error("No target app specified for per-app recording")
             return
 
-        logger.info(f"Starting per-app recording for: {self.target_app}")
+        logger.info(f"Starting per-app recording for: {self.target_app} (using system loopback)")
         self._start_system_recording(callback)
 
     def _update_level(self, audio_np):
@@ -205,6 +246,7 @@ class AudioManager:
                         pass
                     finally:
                         self.p = None
+                        self._has_pyaudiowpatch = False
         except Exception as e:
             logger.error(f"Close stream failed: {e}", exc_info=True)
 

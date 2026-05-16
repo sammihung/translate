@@ -1,12 +1,15 @@
 import time
 import numpy as np
 from typing import Optional, List, Callable
+from core.logging_config import get_logger
 
 try:
     import webrtcvad
     HAS_WEBRTC = True
 except ImportError:
     HAS_WEBRTC = False
+
+logger = get_logger(__name__)
 
 
 class SimpleVAD:
@@ -55,11 +58,15 @@ class SimpleVAD:
 
         if total_frames == 0:
             return False
-        return (speech_frames / total_frames) > 0.3
+        result = (speech_frames / total_frames) > 0.3
+        logger.debug(f"VAD webrtc: speech={speech_frames}/{total_frames}, is_speech={result}")
+        return result
 
     def _is_speech_rms(self, audio_np: np.ndarray) -> bool:
         rms = np.sqrt(np.mean(audio_np ** 2)) * 1000
-        return rms >= self.rms_threshold
+        result = rms >= self.rms_threshold
+        logger.debug(f"VAD rms: RMS={rms:.1f}, threshold={self.rms_threshold}, is_speech={result}")
+        return result
 
     def process_chunk(self, audio_np: np.ndarray, callback: Callable[[np.ndarray], None]):
         current_time = time.time()
@@ -75,10 +82,12 @@ class SimpleVAD:
         self.buffer.extend(audio_np.tolist())
 
         should_process = False
+        reason = ""
 
         if self.chunk_start_time and (current_time - self.chunk_start_time) >= self.max_chunk_duration:
             if len(self.buffer) >= 16000 * 2:
                 should_process = True
+                reason = "max_duration"
                 self.silence_start = None
         elif not is_speech:
             if self.silence_start is None:
@@ -86,11 +95,14 @@ class SimpleVAD:
             elif (current_time - self.silence_start) >= self.silence_duration:
                 if len(self.buffer) >= 16000 * 1:
                     should_process = True
+                    reason = "silence_after_speech"
                 self.silence_start = None
         else:
             self.silence_start = None
 
         if should_process:
+            chunk_duration = len(self.buffer) / 16000
+            logger.info(f"VAD sending chunk: {len(self.buffer)} samples ({chunk_duration:.1f}s), reason={reason}")
             callback(np.array(self.buffer))
             self.buffer = []
             self.chunk_start_time = current_time
@@ -98,6 +110,7 @@ class SimpleVAD:
                 self._byte_buffer = bytearray()
 
         if len(self.buffer) >= 16000 * 10:
+            logger.info(f"VAD buffer overflow: sending {len(self.buffer)} samples")
             callback(np.array(self.buffer))
             self.buffer = []
             self.chunk_start_time = current_time
@@ -106,6 +119,7 @@ class SimpleVAD:
 
         if self.chunk_start_time and (current_time - self.chunk_start_time) >= 3.0:
             if len(self.buffer) >= 16000 * 1:
+                logger.info(f"VAD timeout: sending {len(self.buffer)} samples after 3s")
                 callback(np.array(self.buffer))
                 self.buffer = []
                 self.chunk_start_time = current_time

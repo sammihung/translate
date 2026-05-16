@@ -29,7 +29,11 @@ class AIController:
             logger.info(f"正在連接 ASR API: {config.asr_api_url}")
             
             from ai.asr_engine import ASREngine
-            self.asr_engine = ASREngine()
+            self.asr_engine = ASREngine(
+                model=config.asr_model,
+                api_url=config.asr_api_url,
+                api_key=config.asr_api_key,
+            )
             self.asr_engine.load_model()
             
             if progress_callback:
