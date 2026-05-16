@@ -1,5 +1,5 @@
 ﻿"""
-核心層 - 日誌、模型配置
+核心層 - 日誌
 """
 
 from core.logging_config import setup_logging, get_logger

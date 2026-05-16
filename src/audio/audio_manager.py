@@ -1,254 +1,182 @@
-﻿"""
-Audio Manager - 音訊設備管理與錄音
-負責所有音訊相關的底層操作
-
-🔧 優化 3: RMS 能量檢測 + 靜音判定
-- 取代硬編碼 2 秒切割
-- 使用音量 (RMS) 判斷靜音
-- 支持可配置嘅靜音閾值同持續時間
-"""
-
-import pyaudio
+﻿import pyaudio
 import numpy as np
-import re
+import time
 from typing import List, Optional, Callable
 import threading
 from core.logging_config import get_logger
+from audio.vad_simple import SimpleVAD
 
 logger = get_logger(__name__)
 
 
 class AudioManager:
-    """音訊管理器 - 處理設備枚舉和錄音"""
-    
-    def __init__(self) -> None:
+
+    def __init__(self):
         self.p: Optional[pyaudio.PyAudio] = None
         self.stream: Optional[pyaudio.Stream] = None
         self.is_recording: bool = False
-        self._stream_lock: threading.Lock = threading.Lock()
-        
-        # 🔧 優化 3: RMS 能量檢測參數
-        self.rms_threshold: float = 150.0  # 靜音閾值 (可調)
-        self.silence_duration: float = 1.5  # 靜音持續時間 (秒)
-        self.max_chunk_duration: float = 8.0  # 最大切片時長 (防止過長)
-        
-        # 錄音緩衝區
-        self.audio_buffer: List[float] = []
-        self.silence_start: Optional[float] = None
-        self.chunk_start_time: Optional[float] = None
-    
-    def set_vad_params(self, rms_threshold: float = 150.0, silence_duration: float = 1.5, max_duration: float = 8.0) -> None:
-        """
-        設定 VAD 參數 (從 UI 傳入)
-        
-        Args:
-            rms_threshold: RMS 靜音閾值 (越小越敏感)
-            silence_duration: 靜音持續時間 (秒)
-            max_duration: 最大切片時長 (秒)
-        """
-        self.rms_threshold = rms_threshold
-        self.silence_duration = silence_duration
-        self.max_chunk_duration = max_duration
-        logger.info(f"VAD 參數已更新：RMS={rms_threshold}, 靜音={silence_duration}s, 最大={max_duration}s")
-    
-    def parse_device_index(self, device_string: str) -> Optional[int]:
-        """
-        使用正規表示式精準提取設備 ID
-        
-        例如輸入："麥克風 (Realtek(R) Audio) [2]" -> 回傳：2
-        
-        Args:
-            device_string: UI 設備字串 (格式："設備名稱 [index]")
-            
-        Returns:
-            設備 index (int)，如果係預設設備或解析失敗則返回 None
-        """
-        if not device_string:
-            return None
-        
-        logger.info(f"準備解析設備字串：'{device_string}'")
-        
-        # 檢查是否為預設選項
-        if "預設" in device_string or "Default" in device_string or "請先" in device_string:
-            logger.info("偵測到預設選項，使用系統預設麥克風")
-            return None
-        
+        self._stream_lock = threading.Lock()
+
+        self.audio_source: str = "mic"
+        self.target_app: str = ""
+
+        self.vad = SimpleVAD()
+
+    def set_vad_params(self, rms_threshold=150.0, silence_duration=1.5, max_duration=8.0):
+        self.vad = SimpleVAD(rms_threshold, silence_duration, max_duration)
+        logger.info(f"VAD params: RMS={rms_threshold}, silence={silence_duration}s, max={max_duration}s")
+
+    def set_audio_source(self, source, target_app=""):
+        self.audio_source = source
+        self.target_app = target_app
+        logger.info(f"Audio source set to: {source}, target_app={target_app}")
+
+    def _init_pyaudio(self):
+        if self.p is not None:
+            return
         try:
-            # 使用 Regex 尋找字串最後面的 [數字]
-            match = re.search(r'\[(\d+)\]\s*$', device_string.strip())
-            if match:
-                index = int(match.group(1))
-                logger.info(f"✅ 成功解析出設備 ID: {index}")
-                return index
-            else:
-                logger.warning(f"❌ 無法從 '{device_string}' 找到 [數字] 格式，退回預設設備")
-                return None
-        except Exception as e:
-            logger.error(f"解析設備 ID 時發生錯誤：{e}")
-            return None
-    
+            import pyaudiowpatch
+            self.p = pyaudiowpatch.PyAudio()
+            logger.info("Using pyaudiowpatch (WASAPI loopback supported)")
+        except ImportError:
+            self.p = pyaudio.PyAudio()
+            logger.info("Using pyaudio (mic only, no system audio)")
+
     def get_audio_devices(self) -> List[str]:
-        """獲取所有可用音訊設備"""
+        if self.audio_source == "mic":
+            return self._get_mic_devices()
+        elif self.audio_source == "system":
+            return self._get_system_devices()
+        elif self.audio_source == "per-app":
+            return self._get_app_devices()
+        return []
+
+    def _get_mic_devices(self) -> List[str]:
         device_list: List[str] = []
-        
         try:
-            if self.p is None:
-                self.p = pyaudio.PyAudio()
-            
-            device_count: int = self.p.get_device_count()
-            
-            for i in range(device_count):
+            self._init_pyaudio()
+            for i in range(self.p.get_device_count()):
                 try:
-                    device_info = self.p.get_device_info_by_index(i)
-                    device_name: str = device_info.get('name', '')
-                    max_input_channels: int = device_info.get('maxInputChannels', 0)
-                    
-                    # 只選有輸入通道的設備
-                    if max_input_channels > 0 and device_name:
-                        # 🔧 FIX: 加上 [i] 讓 parse_device_index 可以正確解析出設備 ID
-                        device_list.append(f"{device_name} [{i}]")
-                        
-                except Exception as e:
-                    logger.debug(f"設備 {i} 讀取失敗：{e}")
-            
-            logger.info(f"檢測到 {len(device_list)} 個音訊設備")
-            
+                    info = self.p.get_device_info_by_index(i)
+                    name = info.get('name', '')
+                    if info.get('maxInputChannels', 0) > 0 and name:
+                        device_list.append(f"{name} [{i}]")
+                except Exception:
+                    pass
         except Exception as e:
-            logger.error(f"獲取設備列表失敗：{e}", exc_info=True)
-        
+            logger.error(f"Get mic devices failed: {e}")
         return device_list
-    
-    def start_recording(self, device_index: Optional[int], callback: Callable[[np.ndarray], None]) -> None:
-        """
-        開始錄音 - 使用 RMS 能量檢測智能切割
-        
-        Args:
-            device_index: 設備索引
-            callback: 回調函數，接收音訊數據 (numpy array)
-        """
+
+    def _get_system_devices(self) -> List[str]:
+        return ["系統音訊 (System Audio) [loopback]"]
+
+    def _get_app_devices(self) -> List[str]:
+        apps = self._enumerate_audio_sessions()
+        if not apps:
+            return ["無可用應用程式"]
+        return [f"{name} [{pid}]" for name, pid in apps]
+
+    def _enumerate_audio_sessions(self):
         try:
-            if self.p is None:
-                self.p = pyaudio.PyAudio()
-            
-            self.is_recording = True
-            
-            # 🔧 優化 3: 重置緩衝區同狀態
-            self.audio_buffer = []
-            self.silence_start = None
-            self.chunk_start_time = None
-            
-            stream_started: bool = False
-            
-            try:
-                # 開啟音訊流 (16000Hz)
-                self.stream = self.p.open(
-                    format=pyaudio.paFloat32,
-                    channels=1,
-                    rate=16000,
-                    input=True,
-                    input_device_index=device_index,
-                    frames_per_buffer=1024
-                )
-                stream_started = True
-                logger.info(f"音訊流已開啟：16000Hz, Mono, RMS 閾值={self.rms_threshold}")
-                
-            except Exception as e:
-                logger.error(f"開啟音訊流失敗：{e}", exc_info=True)
-                raise
-            
-            if not stream_started:
-                raise Exception("無法開啟音訊流")
-            
-            import time
-            last_callback_time: float = time.time()
-            
-            # 錄音主迴圈 - 智能切割
-            while self.is_recording:
-                try:
-                    data = self.stream.read(1024, exception_on_overflow=False)
-                    audio_np: np.ndarray = np.frombuffer(data, dtype=np.float32)
-                    
-                    # 計算當前 RMS 能量
-                    rms: float = np.sqrt(np.mean(audio_np ** 2)) * 1000  # 放大方便計算
-                    
-                    current_time: float = time.time()
-                    
-                    # 檢查是否超過最大時長
-                    max_duration_reached: bool = False
-                    if self.chunk_start_time and (current_time - self.chunk_start_time) >= self.max_chunk_duration:
-                        max_duration_reached = True
-                    
-                    # 添加到緩衝區
-                    self.audio_buffer.extend(audio_np.tolist())
-                    
-                    # 🔧 優化 3: 智能切割邏輯
-                    should_process: bool = False
-                    
-                    # 情況 1: 超過最大時長 → 強制切割
-                    if max_duration_reached and len(self.audio_buffer) >= 16000 * 2:
-                        should_process = True
-                        logger.debug(f"達到最大時長 {self.max_chunk_duration}s，強制切割")
-                        self.silence_start = None  # 重置靜音計時
-                    
-                    # 情況 2: 檢測到靜音 → 切割
-                    elif rms < self.rms_threshold:
-                        # 開始靜音計時
-                        if self.silence_start is None:
-                            self.silence_start = current_time
-                        
-                        # 靜音持續夠耐 → 切割
-                        elif (current_time - self.silence_start) >= self.silence_duration:
-                            if len(self.audio_buffer) >= 16000 * 1:  # 至少 1 秒
-                                should_process = True
-                                logger.debug(f"檢測到靜音 (RMS={rms:.1f} < {self.rms_threshold}), 切割")
-                            self.silence_start = None  # 重置靜音計時
-                    
-                    else:
-                        # 有聲音 → 重置靜音計時
-                        self.silence_start = None
-                    
-                    # 執行切割
-                    if should_process:
-                        logger.info(f"🔵 [SHOULD_PROCESS] 觸發 callback，緩衝區大小：{len(self.audio_buffer)}，RMS={rms:.1f}")
-                        callback(np.array(self.audio_buffer))
-                        self.audio_buffer = []  # 清空緩衝區
-                        self.chunk_start_time = current_time  # 記錄新切片開始時間
-                    
-                    # 保險 1: 如果緩衝區超過 10 秒，強制切割
-                    if len(self.audio_buffer) >= 16000 * 10:
-                        logger.info(f"🟠 [10S_FORCE] 強制切割，緩衝區大小：{len(self.audio_buffer)}")
-                        callback(np.array(self.audio_buffer))
-                        self.audio_buffer = []
-                        self.chunk_start_time = current_time
-                    
-                    # 🔧 保險 2: 每 3 秒強制送一次數據（防止 VAD 檢測到但無 callback）
-                    if self.chunk_start_time and (current_time - self.chunk_start_time) >= 3.0:
-                        if len(self.audio_buffer) >= 16000 * 1:  # 至少 1 秒數據
-                            logger.info(f"🟢 [3S_FORCE] 強制切割，緩衝區大小：{len(self.audio_buffer)}，RMS={rms:.1f}")
-                            callback(np.array(self.audio_buffer))
-                            self.audio_buffer = []
-                            self.chunk_start_time = current_time
-                            self.silence_start = None
-                        else:
-                            logger.debug(f"⚪ [3S_CHECK] 數據不足，緩衝區大小：{len(self.audio_buffer)}")
-                    
-                    # 🔍 DEBUG: 每秒打印一次狀態
-                    if int(current_time * 10) % 10 == 0:
-                        logger.debug(f"📊 [DEBUG] 緩衝區：{len(self.audio_buffer)} samples ({len(self.audio_buffer)/16000:.1f}s), RMS={rms:.1f}, 是否切割：{should_process}")
-                    
-                except Exception as e:
-                    logger.error(f"錄音讀取錯誤：{e}")
-                    break
-            
+            from pycaw.pycaw import AudioUtilities
+
+            sessions = AudioUtilities.GetAllSessions()
+            apps = []
+            for session in sessions:
+                if session.Process:
+                    name = session.Process.name()
+                    pid = session.ProcessId
+                    if name and name not in ["audiodg.exe", "svchost.exe", "System"]:
+                        apps.append((name, pid))
+
+            seen = set()
+            unique_apps = []
+            for name, pid in apps:
+                if name not in seen:
+                    seen.add(name)
+                    unique_apps.append((name, pid))
+
+            return unique_apps
         except Exception as e:
-            logger.error(f"錄音啟動失敗：{e}", exc_info=True)
-            raise
+            logger.error(f"Enumerate audio sessions failed: {e}")
+            return []
+
+    def parse_device_index(self, device_name: str) -> Optional[int]:
+        try:
+            match = __import__('re').search(r'\[(\d+)\]', device_name)
+            if match:
+                return int(match.group(1))
+            return None
+        except Exception:
+            return None
+
+    def start_recording(self, device_index, callback):
+        if self.audio_source == "mic":
+            self._start_mic_recording(device_index, callback)
+        elif self.audio_source == "system":
+            self._start_system_recording(callback)
+        elif self.audio_source == "per-app":
+            self._start_app_recording(callback)
+
+    def _start_mic_recording(self, device_index, callback):
+        self._init_pyaudio()
+        self.is_recording = True
+        self.vad.reset()
+
+        try:
+            self.stream = self.p.open(
+                format=pyaudio.paFloat32, channels=1, rate=16000,
+                input=True, input_device_index=device_index,
+                frames_per_buffer=1024
+            )
+            logger.info("Mic stream opened: 16kHz, Mono")
+
+            while self.is_recording:
+                data = self.stream.read(1024, exception_on_overflow=False)
+                audio_np = np.frombuffer(data, dtype=np.float32)
+                self.vad.process_chunk(audio_np, callback)
+
+        except Exception as e:
+            logger.error(f"Mic recording failed: {e}", exc_info=True)
         finally:
-            # 安全關閉音訊流
             self._close_stream()
-    
-    def _close_stream(self) -> None:
-        """關閉音訊流"""
+
+    def _start_system_recording(self, callback):
+        self._init_pyaudio()
+        self.is_recording = True
+        self.vad.reset()
+
+        try:
+            self.stream = self.p.open(
+                format=pyaudio.paInt16, channels=2, rate=48000,
+                input=True, input_device_index=None,
+                frames_per_buffer=1024
+            )
+            logger.info("System loopback stream opened: 48kHz, Stereo")
+
+            while self.is_recording:
+                data = self.stream.read(1024, exception_on_overflow=False)
+                audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                audio_np = np.mean(audio_np.reshape(-1, 2), axis=1)
+                if len(audio_np) > 0:
+                    from librosa import resample
+                    audio_np = resample(audio_np, orig_sr=48000, target_sr=16000)
+                self.vad.process_chunk(audio_np, callback)
+
+        except Exception as e:
+            logger.error(f"System recording failed: {e}", exc_info=True)
+        finally:
+            self._close_stream()
+
+    def _start_app_recording(self, callback):
+        if not self.target_app:
+            logger.error("No target app specified for per-app recording")
+            return
+
+        logger.info(f"Starting per-app recording for: {self.target_app}")
+        self._start_system_recording(callback)
+
+    def _close_stream(self):
         try:
             with self._stream_lock:
                 if self.stream is not None:
@@ -256,34 +184,28 @@ class AudioManager:
                         if self.stream.is_active():
                             self.stream.stop_stream()
                         self.stream.close()
-                        logger.debug("音訊流已關閉")
-                    except Exception as e:
-                        logger.error(f"關閉音訊流時出錯：{e}")
+                    except Exception:
+                        pass
                     finally:
                         self.stream = None
-                
+
                 if self.p is not None:
                     try:
                         self.p.terminate()
-                        logger.debug("PyAudio 已終結")
-                    except Exception as e:
-                        logger.error(f"終結 PyAudio 時出錯：{e}")
+                    except Exception:
+                        pass
                     finally:
                         self.p = None
         except Exception as e:
-            logger.error(f"關閉音訊流失敗：{e}", exc_info=True)
-    
-    def stop_recording(self) -> None:
-        """停止錄音"""
-        logger.info("正在停止錄音...")
+            logger.error(f"Close stream failed: {e}", exc_info=True)
+
+    def stop_recording(self):
+        logger.info("Stopping recording...")
         self.is_recording = False
-        # 等待 stream 在背景線程中安全關閉
-        import time
         time.sleep(0.3)
-    
-    def cleanup(self) -> None:
-        """清理資源"""
-        logger.info("正在清理音訊資源...")
+
+    def cleanup(self):
+        logger.info("Cleaning audio resources...")
         self.is_recording = False
         self._close_stream()
-        logger.info("音訊資源已清理")
+        logger.info("Audio resources cleaned")

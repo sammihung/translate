@@ -10,12 +10,12 @@ from typing import Optional, Callable, List, Dict, Any
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
-import torch
 
 from audio.audio_manager import AudioManager
 from ai.ai_controller import AIController
 from core.logging_config import get_logger
-from config.settings import config, BackendType
+from config.settings import config
+from domain.events import AppCallbacks
 
 logger = get_logger(__name__)
 
@@ -54,30 +54,14 @@ class AppController:
         
         self.recording_state: RecordingState = RecordingState()
         self.is_recording: bool = False
+        self.audio_source: str = config.audio_source
         
         self.record_thread: Optional[threading.Thread] = None
         self.process_thread: Optional[threading.Thread] = None
         
         self.audio_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=10)
         
-        try:
-            self.has_gpu: bool = torch.cuda.is_available()
-            if self.has_gpu:
-                try:
-                    _ = torch.zeros(1).cuda()
-                    self.gpu_vram_gb: float = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
-                except Exception:
-                    self.has_gpu = False
-                    self.gpu_vram_gb = 0.0
-            else:
-                self.gpu_vram_gb = 0.0
-        except Exception:
-            self.has_gpu = False
-            self.gpu_vram_gb = 0.0
-        
-        self.on_subtitle_update: Optional[Callable] = None
-        self.on_translation_complete: Optional[Callable] = None
-        self.on_status_change: Optional[Callable] = None
+        self.callbacks: AppCallbacks = AppCallbacks()
         
         self.translate_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="Translator")
         
@@ -85,7 +69,6 @@ class AppController:
         self.src_lang: str = "auto"
         self.tgt_lang: str = "zh"
         self.bilingual_mode: bool = True
-        self.use_speaker_diarization: bool = False
         self.subtitles: List[Dict[str, Any]] = []
     
     def initialize_engines(self, progress_callback: Optional[Callable] = None) -> bool:
@@ -109,12 +92,9 @@ class AppController:
             return False
     
     def update_config(self, settings: Dict[str, Any]) -> None:
-        """動態更新 API 配置 - 由 UI 呼叫"""
         try:
             from config.settings import config
             
-            if "asr_backend" in settings:
-                config.asr_backend = BackendType(settings["asr_backend"])
             if "asr_model" in settings:
                 config.asr_model = settings["asr_model"]
             if "asr_api_url" in settings:
@@ -122,17 +102,12 @@ class AppController:
             if "asr_api_key" in settings:
                 config.asr_api_key = settings["asr_api_key"]
             
-            if "translate_backend" in settings:
-                config.translate_backend = BackendType(settings["translate_backend"])
             if "translate_model" in settings:
                 config.translate_model = settings["translate_model"]
             if "translate_api_url" in settings:
                 config.translate_api_url = settings["translate_api_url"]
             if "translate_api_key" in settings:
                 config.translate_api_key = settings["translate_api_key"]
-            
-            if "target_lang" in settings:
-                self.target_lang = settings["target_lang"]
             
             if "vad_duration" in settings:
                 vad_duration: float = settings["vad_duration"]
@@ -143,7 +118,9 @@ class AppController:
                     max_duration=8.0
                 )
             
-            logger.info(f"配置已更新：ASR={config.asr_model}@{config.asr_api_url}, Translate={config.translate_model}@{config.translate_api_url}")
+            self._save_env()
+            
+            logger.info(f"Config updated: ASR={config.asr_model}@{config.asr_api_url}, Translate={config.translate_model}@{config.translate_api_url}")
             
             def reload() -> None:
                 try:
@@ -158,8 +135,57 @@ class AppController:
             logger.error(f"更新配置失敗：{e}", exc_info=True)
             raise
     
-    def get_audio_devices(self) -> List[str]:
+    def _save_env(self) -> None:
         try:
+            from config.settings import config
+            env_path = Path(".env")
+            lines = []
+            if env_path.exists():
+                with open(env_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+            
+            env_map = {
+                "ASR_MODEL": config.asr_model,
+                "ASR_API_URL": config.asr_api_url,
+                "ASR_API_KEY": config.asr_api_key or "",
+                "TRANSLATE_MODEL": config.translate_model,
+                "TRANSLATE_API_URL": config.translate_api_url,
+                "TRANSLATE_API_KEY": config.translate_api_key or "",
+            }
+            
+            updated_keys = set()
+            new_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#") and "=" in stripped:
+                    key = stripped.split("=", 1)[0].strip()
+                    if key in env_map:
+                        new_lines.append(f"{key}={env_map[key]}\n")
+                        updated_keys.add(key)
+                    else:
+                        new_lines.append(line)
+                else:
+                    new_lines.append(line)
+            
+            for key, value in env_map.items():
+                if key not in updated_keys:
+                    new_lines.append(f"{key}={value}\n")
+            
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+            
+            logger.info(f".env saved with updated config")
+        except Exception as e:
+            logger.error(f"Failed to save .env: {e}")
+    
+    def set_audio_source(self, source: str, target_app: str = "") -> None:
+        self.audio_source = source
+        self.audio_mgr.set_audio_source(source, target_app)
+        logger.info(f"Audio source set to: {source}, target_app={target_app}")
+    
+    def get_audio_devices(self, source: str = "mic") -> List[str]:
+        try:
+            self.audio_mgr.set_audio_source(source)
             return self.audio_mgr.get_audio_devices()
         except Exception as e:
             logger.error(f"獲取設備列表失敗：{e}")
@@ -169,19 +195,13 @@ class AppController:
         return self.ai_ctrl.engines_ready
     
     def get_current_config(self) -> Dict[str, Any]:
-        """返回當前配置供 UI 顯示"""
         return {
-            "asr_backend": config.asr_backend.value,
             "asr_model": config.asr_model,
             "asr_api_url": config.asr_api_url,
             "asr_api_key": config.asr_api_key or "",
-            "translate_backend": config.translate_backend.value,
             "translate_model": config.translate_model,
             "translate_api_url": config.translate_api_url,
-            "translate_api_key": config.translate_api_key or "",
-            "device": config.device,
-            "has_gpu": self.has_gpu,
-            "gpu_vram_gb": self.gpu_vram_gb
+            "translate_api_key": config.translate_api_key or ""
         }
     
     def set_settings(self, settings: Dict[str, Any]) -> None:
@@ -218,8 +238,7 @@ class AppController:
             )
             self.record_thread.start()
             
-            if self.on_status_change:
-                self.on_status_change("🔴 錄音中...", "#ef4444")
+            self.callbacks.notify_status_change("🔴 錄音中...", "#ef4444")
             
             return True
         except Exception as e:
@@ -237,14 +256,12 @@ class AppController:
             except Exception:
                 pass
             
-            if self.on_status_change:
-                self.on_status_change("⏳ 正在處理最後的音訊...", "#f59e0b")
+            self.callbacks.notify_status_change("⏳ 正在處理最後的音訊...", "#f59e0b")
             
             def finish() -> None:
                 try:
                     self.audio_queue.join()
-                    if self.on_status_change:
-                        self.on_status_change("⏹ 已停止", "#94a3b8")
+                    self.callbacks.notify_status_change("⏹ 已停止", "#94a3b8")
                 except Exception as e:
                     logger.error(f"等待隊列清空時出錯：{e}")
             
@@ -299,9 +316,7 @@ class AppController:
                             self.subtitles.append(subtitle_item)
                             item_index = len(self.subtitles) - 1
                             
-                            bubble_id = None
-                            if self.on_subtitle_update:
-                                bubble_id = self.on_subtitle_update(original, "⏳ 翻譯中...", speaker_id)
+                            bubble_id = self.callbacks.notify_subtitle_update(original, "⏳ 翻譯中...", speaker_id)
                             
                             if bubble_id:
                                 def translate_task(text, b_id, idx) -> None:
@@ -309,8 +324,7 @@ class AppController:
                                         real_translated = self.ai_ctrl.translate_text(text)
                                         if idx < len(self.subtitles):
                                             self.subtitles[idx]["translated"] = real_translated
-                                        if self.on_translation_complete:
-                                            self.on_translation_complete(b_id, real_translated)
+                                        self.callbacks.notify_translation_complete(b_id, real_translated)
                                     except Exception as e:
                                         logger.error(f"背景翻譯失敗：{e}", exc_info=True)
                                 
@@ -332,8 +346,7 @@ class AppController:
             import librosa
             
             if not self.ai_ctrl.engines_ready:
-                if self.on_status_change:
-                    self.on_status_change("⚠️ 引擎未就緒", "#f59e0b")
+                self.callbacks.notify_status_change("⚠️ 引擎未就緒", "#f59e0b")
                 return False
             
             audio_data, sr = librosa.load(filepath, sr=16000)
@@ -353,11 +366,9 @@ class AppController:
                     "timestamp": np.datetime64('now')
                 })
                 
-                if self.on_subtitle_update:
-                    self.on_subtitle_update(original, translated, speaker_id)
+                self.callbacks.notify_subtitle_update(original, translated, speaker_id)
             
-            if self.on_status_change:
-                self.on_status_change("✓ 檔案處理完成", "#10b981")
+            self.callbacks.notify_status_change("✓ 檔案處理完成", "#10b981")
             
             return True
         except Exception as e:
@@ -399,11 +410,5 @@ class AppController:
             self.audio_mgr.cleanup()
             self.ai_ctrl.cleanup()
             self.translate_pool.shutdown(wait=False)
-            
-            if self.has_gpu and torch.cuda.is_available():
-                import gc
-                gc.collect()
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
         except Exception as e:
             logger.error(f"清理資源失敗：{e}", exc_info=True)

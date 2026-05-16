@@ -1,18 +1,10 @@
 """
-配置管理 - pydantic-settings
-支援 LM Studio 及 OpenAI-compatible API
+配置管理 - OpenAI-compatible API (LM Studio / 任何兼容服務)
 """
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
-from enum import Enum
-
-
-class BackendType(str, Enum):
-    LM_STUDIO = "lm_studio"
-    OPENAI_COMPAT = "openai_compat"
-    CUSTOM = "custom"
 
 
 class AppConfig(BaseSettings):
@@ -24,28 +16,20 @@ class AppConfig(BaseSettings):
     )
     
     # ASR
-    asr_backend: BackendType = Field(
-        default=BackendType.LM_STUDIO,
-        description="ASR 後端 (lm_studio, openai_compat, custom)"
-    )
     asr_model: str = Field(
         default="qwen3-asr-1.7b",
         description="ASR 模型 ID"
     )
     asr_api_url: str = Field(
         default="http://localhost:1234/v1",
-        description="ASR API URL (LM Studio 預設)"
+        description="ASR API URL"
     )
     asr_api_key: Optional[str] = Field(
         default=None,
-        description="ASR API Key (如需要)"
+        description="API Key (如需要)"
     )
     
     # Translation
-    translate_backend: BackendType = Field(
-        default=BackendType.LM_STUDIO,
-        description="翻譯後端 (lm_studio, openai_compat, custom)"
-    )
     translate_model: str = Field(
         default="qwen3.5-9b",
         description="翻譯模型 ID"
@@ -56,13 +40,17 @@ class AppConfig(BaseSettings):
     )
     translate_api_key: Optional[str] = Field(
         default=None,
-        description="翻譯 API Key (如需要)"
+        description="API Key (如需要)"
     )
     
-    # Device
-    device: str = Field(
-        default="cuda",
-        description="計算設備 (cuda, cpu)"
+    # Audio source
+    audio_source: str = Field(
+        default="mic",
+        description="Audio source: mic, system, per-app"
+    )
+    target_app: str = Field(
+        default="",
+        description="Target app name for per-app capture"
     )
     
     # VAD
@@ -76,13 +64,12 @@ class AppConfig(BaseSettings):
     
     def to_dict(self) -> dict:
         return {
-            "asr_backend": self.asr_backend.value,
             "asr_model": self.asr_model,
             "asr_api_url": self.asr_api_url,
-            "translate_backend": self.translate_backend.value,
+            "asr_api_key": self.asr_api_key or "",
             "translate_model": self.translate_model,
             "translate_api_url": self.translate_api_url,
-            "device": self.device
+            "translate_api_key": self.translate_api_key or ""
         }
 
 

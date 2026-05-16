@@ -99,10 +99,9 @@ class VADProcessor:
             }
             
             # 執行推理
-            output, self.state = self.session.run(None, ort_inputs)
-            
-            # 返回語音概率
-            prob: float = float(output[0, 0])
+            outputs = self.session.run(None, ort_inputs)
+            prob: float = float(outputs[0][0, 0])
+            self.state = outputs[1]
             return prob
             
         except Exception as e:
