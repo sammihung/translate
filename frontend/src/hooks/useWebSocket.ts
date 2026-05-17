@@ -37,10 +37,17 @@ export function useWebSocket() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as WsMessage
+        if (data.type === 'audio_level') {
+          console.log('[WS] audio_level:', data.level)
+        }
         setLastMessage(data)
 
         const listener = listenersRef.current.get(data.type)
-        if (listener) listener(data)
+        if (listener) {
+          listener(data)
+        } else {
+          console.warn('[WS] No listener for type:', data.type)
+        }
       } catch (e) {
         console.error('[WS] Parse error:', e)
       }
@@ -59,6 +66,8 @@ export function useWebSocket() {
   const send = useCallback((data: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(data))
+    } else {
+      console.warn('[WS] Cannot send - WebSocket not connected, message dropped:', data)
     }
   }, [])
 

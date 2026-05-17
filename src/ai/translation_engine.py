@@ -37,13 +37,13 @@ class TranslationEngine:
             response = self.session.get(f"{self.api_url}/models", timeout=5)
             if response.status_code == 200:
                 self.loaded = True
-                logger.info(f"[OK] API connected, model: {self.model}")
+                logger.info(f"[OK] Translation API connected, model: {self.model}")
             else:
-                logger.warning(f"API 回應異常：{response.status_code}")
+                logger.warning(f"Translation API 回應異常：{response.status_code}")
         except requests.exceptions.ConnectionError:
-            logger.error(f"無法連接 API：{self.api_url}")
+            logger.error(f"Translation API 無法連接：{self.api_url} (Is LM Studio running?)")
         except Exception as e:
-            logger.error(f"API 連接失敗：{e}")
+            logger.error(f"Translation API 連接失敗：{e}")
 
     def translate(self, text: str) -> str:
         if not text.strip():

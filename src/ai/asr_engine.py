@@ -2,6 +2,7 @@
 import torch
 from typing import Optional
 from core.logging_config import get_logger
+from config.settings import config
 
 logger = get_logger(__name__)
 
@@ -9,7 +10,7 @@ logger = get_logger(__name__)
 class ASREngine:
 
     def __init__(self, model=None, api_url=None, api_key=None):
-        self.model_path = model or "Qwen/Qwen3-ASR-1.7B"
+        self.model_path = model or config.asr_model
         self.model = None
         self.loaded = False
 
@@ -21,14 +22,25 @@ class ASREngine:
         try:
             from qwen_asr import Qwen3ASRModel
 
+            kwargs = {
+                "dtype": torch.bfloat16,
+                "max_new_tokens": 256,
+            }
+
+            if "8bit" in self.model_path.lower():
+                kwargs["device_map"] = "cuda:0"
+                kwargs["load_in_8bit"] = True
+                del kwargs["dtype"]
+                logger.info("Using 8-bit quantization")
+            else:
+                kwargs["device_map"] = "cuda:0"
+
             self.model = Qwen3ASRModel.from_pretrained(
                 self.model_path,
-                dtype=torch.bfloat16,
-                device_map="cuda:0",
-                max_new_tokens=256,
+                **kwargs
             )
             self.loaded = True
-            logger.info("[OK] Qwen3-ASR loaded!")
+            logger.info(f"[OK] {self.model_path} loaded!")
         except Exception as e:
             logger.error(f"Model load failed: {e}", exc_info=True)
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { RealtimeView } from './components/RealtimeView'
 import { BatchView } from './components/BatchView'
@@ -15,30 +15,48 @@ const FONT_PRESETS = [
 
 const DEFAULT_FONT_INDEX = 1
 
+interface AppConfig {
+  asr_model: string
+  translate_model: string
+  translate_api_url: string
+  translate_api_key: string
+}
+
 function App() {
   const [activeView, setActiveView] = useState('realtime')
   const [fontIndex, setFontIndex] = useState(DEFAULT_FONT_INDEX)
   const [floatingActive, setFloatingActive] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [enginesReady, setEnginesReady] = useState(false)
+  const [translateReady, setTranslateReady] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
   const [status, setStatus] = useState('連接中...')
   const [statusColor, setStatusColor] = useState('#F59E0B')
-  const [appConfig, setAppConfig] = useState({
+  const [appConfig, setAppConfig] = useState<AppConfig>({
     asr_model: '',
-    asr_api_url: '',
-    asr_api_key: '',
     translate_model: '',
     translate_api_url: '',
     translate_api_key: '',
   })
 
-  const { send, on, off } = useWebSocket()
+  const { send, on } = useWebSocket()
   const { bubbles, addBubble, updateBubble } = useChat()
 
+  const addBubbleRef = useRef(addBubble)
+  addBubbleRef.current = addBubble
+  const updateBubbleRef = useRef(updateBubble)
+  updateBubbleRef.current = updateBubble
+
   useEffect(() => {
+    on('initial_state', (data) => {
+      setEnginesReady((data.engines_ready as boolean) ?? false)
+      setIsRecording((data.is_recording as boolean) ?? false)
+      setAppConfig((data.config as AppConfig) ?? { asr_model: '', translate_model: '', translate_api_url: '', translate_api_key: '' })
+      setTranslateReady((data.translate_ready as boolean) ?? false)
+    })
+
     on('subtitle_update', (data) => {
-      addBubble({
+      addBubbleRef.current({
         bubble_id: (data.bubble_id as string) || '',
         original: (data.original as string) || '',
         translated: (data.translated as string) || '',
@@ -47,7 +65,7 @@ function App() {
     })
 
     on('translation_complete', (data) => {
-      updateBubble({
+      updateBubbleRef.current({
         bubble_id: (data.bubble_id as string) || '',
         translated: (data.translated as string) || '',
       })
@@ -59,40 +77,30 @@ function App() {
     })
 
     on('audio_level', (data) => {
-      setAudioLevel((data.level as number) || 0)
+      const level = (data.level as number) || 0
+      console.log('[App] audio_level received:', level)
+      setAudioLevel(level)
     })
 
     on('engines_ready', (data) => {
-      setEnginesReady((data.ready as boolean) || false)
+      setEnginesReady((data.ready as boolean) ?? false)
     })
 
     on('record_state', (data) => {
-      setIsRecording((data.is_recording as boolean) || false)
+      setIsRecording((data.is_recording as boolean) ?? false)
     })
-  }, [on, off, addBubble, updateBubble])
+  }, [on])
 
-  useEffect(() => {
-    fetch('/api/config')
-      .then((r) => r.json())
-      .then(setAppConfig)
-      .catch(console.error)
-
-    fetch('/api/status')
-      .then((r) => r.json())
-      .then((data) => {
-        setEnginesReady(data.engines_ready || false)
-        setIsRecording(data.is_recording || false)
-      })
-      .catch(console.error)
-  }, [])
-
-  const handleRecordClick = useCallback(() => {
+  const handleRecordClick = useCallback((deviceIndex: number | null) => {
     if (isRecording) {
       send({ type: 'stop_recording' })
       setIsRecording(false)
       setAudioLevel(0)
     } else {
-      send({ type: 'start_recording' })
+      send({
+        type: 'start_recording',
+        device_index: deviceIndex,
+      })
     }
   }, [isRecording, send])
 
@@ -175,6 +183,7 @@ function App() {
           <RealtimeView
             isRecording={isRecording}
             enginesReady={enginesReady}
+            translateReady={translateReady}
             audioLevel={audioLevel}
             bubbles={bubbles}
             onRecordClick={handleRecordClick}

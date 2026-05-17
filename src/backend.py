@@ -45,6 +45,12 @@ class ConnectionManager:
         logger.info(f"WebSocket client disconnected: {client_id}")
 
     async def broadcast(self, message: dict):
+        msg_type = message.get("type", "")
+        if msg_type == "audio_level":
+            level = message.get("level", 0)
+            logger.info(f"[BROADCAST] audio_level={level:.3f} to {len(self.active)} clients")
+        if not self.active:
+            return
         dead = []
         for client_id, ws in self.active.items():
             try:
@@ -65,10 +71,13 @@ class ConnectionManager:
     def broadcast_sync(self, message: dict):
         if self._event_loop and self._event_loop.is_running():
             self._event_loop.call_soon_threadsafe(
-                lambda: self._async_queue.put_nowait(message)
+                lambda m=message: self._async_queue.put_nowait(m)
             )
+        else:
+            logger.warning("[WS] Cannot broadcast - event loop not running")
 
     async def process_queue(self):
+        logger.info("[WS] process_queue started")
         while True:
             message = await self._async_queue.get()
             await self.broadcast(message)
@@ -84,11 +93,11 @@ async def lifespan(app: FastAPI):
     controller = AppController()
 
     ws_manager.set_event_loop(asyncio.get_event_loop())
-
     queue_task = asyncio.create_task(ws_manager.process_queue())
 
     def on_subtitle_update(original, translated, speaker_id):
         bubble_id = str(uuid.uuid4())
+        logger.info(f"[WS] subtitle_update: '{original[:50]}...' -> '{translated[:30]}...'")
         ws_manager.broadcast_sync({
             "type": "subtitle_update",
             "bubble_id": bubble_id,
@@ -99,6 +108,7 @@ async def lifespan(app: FastAPI):
         return bubble_id
 
     def on_translation_complete(bubble_id, translated):
+        logger.info(f"[WS] translation_complete: '{translated[:30]}...'")
         ws_manager.broadcast_sync({
             "type": "translation_complete",
             "bubble_id": bubble_id,
@@ -106,6 +116,7 @@ async def lifespan(app: FastAPI):
         })
 
     def on_status_change(status, color):
+        logger.info(f"[WS] status_change: {status}")
         ws_manager.broadcast_sync({
             "type": "status_change",
             "status": status,
@@ -182,8 +193,11 @@ async def get_status():
 @app.get("/api/devices")
 async def get_devices(source: str = "mic"):
     if controller:
-        return {"devices": controller.get_audio_devices(source)}
-    return {"devices": []}
+        devices = controller.get_audio_devices(source)
+        return {"devices": devices, "parsed": [
+            {"name": d, "index": controller.audio_mgr.parse_device_index(d)} for d in devices
+        ]}
+    return {"devices": [], "parsed": []}
 
 
 @app.get("/api/apps")
@@ -214,9 +228,15 @@ async def set_lang(data: Dict[str, Any]):
 
 
 @app.post("/api/record/start")
-async def start_recording():
+async def start_recording(data: Dict[str, Any] = None):
     if controller:
-        success = controller.start_recording()
+        device_index = None
+        if data:
+            device_index = data.get("device_index")
+            if device_index is not None:
+                device_index = int(device_index)
+        logger.info(f"Starting recording with device_index={device_index}")
+        success = controller.start_recording(device_index=device_index)
         return {"success": success}
     return {"success": False}
 
@@ -241,29 +261,58 @@ async def export_srt(data: Dict[str, Any]):
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     client_id = await ws_manager.connect(ws)
+
+    if controller:
+        await ws_manager.send_to(client_id, {
+            "type": "initial_state",
+            "engines_ready": controller.is_engines_ready(),
+            "is_recording": controller.is_recording,
+            "audio_source": controller.audio_source,
+            "src_lang": controller.src_lang,
+            "tgt_lang": controller.tgt_lang,
+            "config": controller.get_current_config(),
+            "asr_ready": controller.ai_ctrl.asr_engine.loaded if controller.ai_ctrl.asr_engine else False,
+            "translate_ready": controller.ai_ctrl.translate_engine.loaded if controller.ai_ctrl.translate_engine else False,
+        })
+        if controller.is_engines_ready():
+            await ws_manager.send_to(client_id, {"type": "status_change", "status": "已連接", "color": "#10b981"})
+        else:
+            await ws_manager.send_to(client_id, {"type": "status_change", "status": "連接失敗", "color": "#F43F5E"})
+        await ws_manager.send_to(client_id, {"type": "engines_ready", "ready": controller.is_engines_ready()})
+
     try:
         while True:
             data = await ws.receive_json()
             msg_type = data.get("type", "")
 
             if msg_type == "start_recording":
-                success = controller.start_recording() if controller else False
-                await ws_manager.send_to(client_id, {
-                    "type": "record_state",
-                    "is_recording": success,
-                })
+                device_index = data.get("device_index")
+                if device_index is not None:
+                    device_index = int(device_index)
+                success = controller.start_recording(device_index=device_index) if controller else False
+                await ws_manager.send_to(client_id, {"type": "record_state", "is_recording": success})
 
             elif msg_type == "stop_recording":
                 if controller:
                     controller.stop_recording()
-                await ws_manager.send_to(client_id, {
-                    "type": "record_state",
-                    "is_recording": False,
-                })
+                await ws_manager.send_to(client_id, {"type": "record_state", "is_recording": False})
 
             elif msg_type == "set_source":
+                source = data.get("source", "mic")
+                target_app = data.get("target_app", "")
+                logger.info(f"[WS] set_source: source={source}, target_app={target_app}")
                 if controller:
-                    controller.set_audio_source(data.get("source", "mic"), data.get("target_app", ""))
+                    was_recording = controller.is_recording
+                    if was_recording:
+                        logger.info("[WS] Source changed while recording, restarting...")
+                        controller.stop_recording()
+                        await asyncio.sleep(0.5)
+                    controller.set_audio_source(source, target_app)
+                    logger.info(f"[WS] audio_source now = {controller.audio_source}")
+                    if was_recording:
+                        success = controller.start_recording(device_index=None)
+                        await ws_manager.send_to(client_id, {"type": "record_state", "is_recording": success})
+                        logger.info(f"[WS] Recording restarted with source={source}, success={success}")
 
             elif msg_type == "set_lang":
                 if controller:

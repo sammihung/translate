@@ -23,6 +23,8 @@ class AudioManager:
 
         self.vad = SimpleVAD()
         self.on_audio_level: Optional[Callable[[float], None]] = None
+        self._last_level_time: float = 0
+        self._level_interval: float = 0.05
 
     def set_vad_params(self, silence_duration=0.8, speech_duration=2.0, max_duration=4.0):
         self.vad = SimpleVAD(silence_duration=silence_duration, speech_duration=speech_duration, max_chunk_duration=max_duration)
@@ -153,7 +155,8 @@ class AudioManager:
                 input=True, input_device_index=device_index,
                 frames_per_buffer=1024
             )
-            logger.info("Mic stream opened: 16kHz, Mono")
+            dev_info = self.p.get_device_info_by_index(device_index) if device_index is not None else self.p.get_default_input_device_info()
+            logger.info(f"Mic stream opened: 16kHz, Mono, device=[{device_index}] {dev_info.get('name', 'unknown')}, maxInputChannels={dev_info.get('maxInputChannels', '?')}")
 
             while self.is_recording:
                 data = self.stream.read(1024, exception_on_overflow=False)
@@ -207,8 +210,6 @@ class AudioManager:
                 if loopback_rate != target_rate and len(audio_np) > 0:
                     audio_np = librosa_resample(audio_np, orig_sr=loopback_rate, target_sr=target_rate)
 
-                rms = np.sqrt(np.mean(audio_np ** 2)) * 1000
-                logger.debug(f"System chunk: RMS={rms:.1f}, samples={len(audio_np)}, rate={loopback_rate}->{target_rate}")
                 self._update_level(audio_np)
                 self.vad.process_chunk(audio_np, callback)
 
@@ -226,10 +227,20 @@ class AudioManager:
         self._start_system_recording(callback)
 
     def _update_level(self, audio_np):
-        if self.on_audio_level and len(audio_np) > 0:
+        if len(audio_np) > 0:
+            import time as time_module
+            now = time_module.time()
+            if now - self._last_level_time < self._level_interval:
+                return
+            self._last_level_time = now
+            
             rms = np.sqrt(np.mean(audio_np ** 2))
-            level = min(1.0, rms * 10)
-            self.on_audio_level(level)
+            peak = np.max(np.abs(audio_np))
+            db = 20 * np.log10(rms + 1e-10)
+            level = min(1.0, max(0.0, (db + 80) / 80))
+            logger.info(f"[AUDIO_LEVEL] RMS={rms:.6f}, peak={peak:.6f}, dB={db:.1f}, level={level:.3f}")
+            if self.on_audio_level:
+                self.on_audio_level(level)
 
     def _close_stream(self):
         try:

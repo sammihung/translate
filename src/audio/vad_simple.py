@@ -30,6 +30,7 @@ class SimpleVAD:
         self._model = None
         self._iterator = None
         self._loaded = False
+        self._is_speaking = False
 
     def _load_silero(self):
         if self._loaded:
@@ -58,6 +59,7 @@ class SimpleVAD:
         self.silence_start = None
         self.chunk_start_time = None
         self.speech_start = None
+        self._is_speaking = False
         if self._iterator:
             self._iterator.reset_states()
 
@@ -73,16 +75,23 @@ class SimpleVAD:
             audio_float = torch.from_numpy(frame.astype(np.float32) / 32767.0)
             result = self._iterator(audio_float, self.SAMPLE_RATE)
             
-            if result and 'start' in result:
-                return True
-            if result and 'end' in result:
-                return False
+            if result:
+                if 'start' in result:
+                    self._is_speaking = True
+                if 'end' in result:
+                    self._is_speaking = False
         
-        return getattr(self._iterator, 'is_speech', False) if self._iterator else False
+        return self._is_speaking
+
+    MIN_RMS_THRESHOLD = 0.001
 
     def process_chunk(self, audio_np: np.ndarray, callback: Callable[[np.ndarray], None]):
         if not self._loaded:
             self._load_silero()
+
+        rms = np.sqrt(np.mean(audio_np ** 2)) if len(audio_np) > 0 else 0.0
+        if rms < self.MIN_RMS_THRESHOLD:
+            return
 
         current_time = time.time()
 

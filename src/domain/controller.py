@@ -97,10 +97,6 @@ class AppController:
             
             if "asr_model" in settings:
                 config.asr_model = settings["asr_model"]
-            if "asr_api_url" in settings:
-                config.asr_api_url = settings["asr_api_url"]
-            if "asr_api_key" in settings:
-                config.asr_api_key = settings["asr_api_key"]
             
             if "translate_model" in settings:
                 config.translate_model = settings["translate_model"]
@@ -119,7 +115,7 @@ class AppController:
             
             self._save_env()
             
-            logger.info(f"Config updated: ASR={config.asr_model}@{config.asr_api_url}, Translate={config.translate_model}@{config.translate_api_url}")
+            logger.info(f"Config updated: ASR={config.asr_model}, Translate={config.translate_model}@{config.translate_api_url}")
             
             def reload() -> None:
                 try:
@@ -145,8 +141,6 @@ class AppController:
             
             env_map = {
                 "ASR_MODEL": config.asr_model,
-                "ASR_API_URL": config.asr_api_url,
-                "ASR_API_KEY": config.asr_api_key or "",
                 "TRANSLATE_MODEL": config.translate_model,
                 "TRANSLATE_API_URL": config.translate_api_url,
                 "TRANSLATE_API_KEY": config.translate_api_key or "",
@@ -204,8 +198,6 @@ class AppController:
     def get_current_config(self) -> Dict[str, Any]:
         return {
             "asr_model": config.asr_model,
-            "asr_api_url": config.asr_api_url,
-            "asr_api_key": config.asr_api_key or "",
             "translate_model": config.translate_model,
             "translate_api_url": config.translate_api_url,
             "translate_api_key": config.translate_api_key or ""
@@ -223,11 +215,13 @@ class AppController:
             if not self.ai_ctrl.engines_ready:
                 self.callbacks.notify_status_change("⚠️ 引擎未就緒", "#f59e0b")
                 return False
-            
+
+            logger.info(f"Starting recording: source={self.audio_source}, device_index={device_index}")
             self.recording_state.start()
             self.is_recording = True
 
             self.audio_mgr.on_audio_level = self.callbacks.notify_audio_level
+            logger.info(f"Audio level callback set: {self.audio_mgr.on_audio_level is not None}")
             
             while not self.audio_queue.empty():
                 try:
@@ -307,7 +301,11 @@ class AppController:
                         continue
                     
                     try:
-                        logger.debug(f"Processing audio chunk: {len(audio_data)} samples, queue_size={self.audio_queue.qsize()}")
+                        audio_rms = np.sqrt(np.mean(audio_data ** 2)) if len(audio_data) > 0 else 0.0
+                        if audio_rms < 0.005:
+                            logger.debug(f"Skipping silent chunk: RMS={audio_rms:.4f}")
+                            continue
+
                         src_lang_param = getattr(self, 'src_lang', 'auto')
                         original, _, speaker = self.ai_ctrl.process_audio(
                             audio_data, src_lang=src_lang_param, skip_translation=True
@@ -335,11 +333,16 @@ class AppController:
                                         real_translated = self.ai_ctrl.translate_text(text)
                                         if idx < len(self.subtitles):
                                             self.subtitles[idx]["translated"] = real_translated
+                                        logger.info(f"Translation complete: '{text[:30]}' -> '{real_translated[:30]}'")
                                         self.callbacks.notify_translation_complete(b_id, real_translated)
                                     except Exception as e:
-                                        logger.error(f"背景翻譯失敗：{e}", exc_info=True)
+                                        logger.error(f"翻譯失敗：{e}", exc_info=True)
+                                        self.callbacks.notify_translation_complete(b_id, f"[翻譯失敗] {text}")
                                 
-                                self.translate_pool.submit(translate_task, original, bubble_id, item_index)
+                                try:
+                                    self.translate_pool.submit(translate_task, original, bubble_id, item_index)
+                                except RuntimeError:
+                                    logger.warning("Translation pool shutting down, skipping translation")
                     finally:
                         try:
                             self.audio_queue.task_done()

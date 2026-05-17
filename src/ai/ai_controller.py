@@ -24,15 +24,13 @@ class AIController:
     ) -> bool:
         try:
             if progress_callback:
-                progress_callback("正在連接 ASR API...")
+                progress_callback("正在載入 ASR 模型...")
             
-            logger.info(f"正在連接 ASR API: {config.asr_api_url}")
+            logger.info(f"正在載入 ASR 模型: {config.asr_model}")
             
             from ai.asr_engine import ASREngine
             self.asr_engine = ASREngine(
                 model=config.asr_model,
-                api_url=config.asr_api_url,
-                api_key=config.asr_api_key,
             )
             self.asr_engine.load_model()
             

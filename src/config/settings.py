@@ -1,10 +1,10 @@
 """
-配置管理 - OpenAI-compatible API (LM Studio / 任何兼容服務)
+配置管理 - Qwen3-ASR 本地推理
 """
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
+from typing import Optional, Literal
 
 
 class AppConfig(BaseSettings):
@@ -15,21 +15,13 @@ class AppConfig(BaseSettings):
         extra="ignore"
     )
     
-    # ASR
-    asr_model: str = Field(
-        default="qwen3-asr-1.7b",
-        description="ASR 模型 ID"
-    )
-    asr_api_url: str = Field(
-        default="http://localhost:1234/v1",
-        description="ASR API URL"
-    )
-    asr_api_key: Optional[str] = Field(
-        default=None,
-        description="API Key (如需要)"
+    # ASR Model (local inference)
+    asr_model: Literal["Qwen/Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-0.6B", "Qwen/Qwen3-ASR-1.7B-8bit"] = Field(
+        default="Qwen/Qwen3-ASR-1.7B",
+        description="ASR model: Qwen/Qwen3-ASR-1.7B, Qwen/Qwen3-ASR-0.6B, or Qwen/Qwen3-ASR-1.7B-8bit"
     )
     
-    # Translation
+    # Translation (LM Studio API)
     translate_model: str = Field(
         default="qwen3.5-9b",
         description="翻譯模型 ID"
@@ -65,8 +57,6 @@ class AppConfig(BaseSettings):
     def to_dict(self) -> dict:
         return {
             "asr_model": self.asr_model,
-            "asr_api_url": self.asr_api_url,
-            "asr_api_key": self.asr_api_key or "",
             "translate_model": self.translate_model,
             "translate_api_url": self.translate_api_url,
             "translate_api_key": self.translate_api_key or ""
