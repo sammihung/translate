@@ -67,7 +67,10 @@ class TranslationEngine:
 
             payload = {
                 "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": [{
+                    "role": "user",
+                    "content": [{"type": "text", "text": prompt}]
+                }],
                 "temperature": 0.1,
                 "max_tokens": 1024
             }
@@ -89,7 +92,7 @@ class TranslationEngine:
                 logger.debug(f"翻譯結果：{translated[:50]}...")
                 return translated
             else:
-                logger.warning(f"API 錯誤：{response.status_code}")
+                logger.warning(f"API 錯誤：{response.status_code}, body={response.text[:500]}")
                 return text
 
         except Exception as e:

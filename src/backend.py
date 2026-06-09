@@ -13,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 
 from audio.audio_manager import AudioManager
@@ -37,25 +39,30 @@ class ConnectionManager:
         await ws.accept()
         client_id = str(uuid.uuid4())
         self.active[client_id] = ws
-        logger.info(f"WebSocket client connected: {client_id}")
+        logger.info(f"WebSocket client connected: {client_id}, total clients: {len(self.active)}")
         return client_id
 
     def disconnect(self, client_id: str):
-        self.active.pop(client_id, None)
-        logger.info(f"WebSocket client disconnected: {client_id}")
+        removed = self.active.pop(client_id, None)
+        logger.info(f"WebSocket client disconnected: {client_id}, was_in_active={removed is not None}")
 
     async def broadcast(self, message: dict):
         msg_type = message.get("type", "")
         if msg_type == "audio_level":
             level = message.get("level", 0)
-            logger.info(f"[BROADCAST] audio_level={level:.3f} to {len(self.active)} clients")
+            client_count = len(self.active)
+            if client_count == 0:
+                logger.debug(f"[BROADCAST] audio_level={level:.3f} but NO CLIENTS")
         if not self.active:
+            if msg_type != "audio_level":
+                logger.warning(f"[BROADCAST] No active clients, message type={msg_type} dropped")
             return
         dead = []
         for client_id, ws in self.active.items():
             try:
                 await ws.send_json(message)
-            except Exception:
+            except Exception as e:
+                logger.error(f"[BROADCAST] Failed to send {msg_type} to {client_id}: {e}")
                 dead.append(client_id)
         for cid in dead:
             self.active.pop(cid, None)
@@ -65,8 +72,12 @@ class ConnectionManager:
         if ws:
             try:
                 await ws.send_json(message)
-            except Exception:
+                logger.info(f"[send_to] Sent {message.get('type')} to {client_id}")
+            except Exception as e:
+                logger.error(f"[send_to] Failed to send to {client_id}: {e}")
                 self.active.pop(client_id, None)
+        else:
+            logger.warning(f"[send_to] Client {client_id} not found in active {list(self.active.keys())}")
 
     def broadcast_sync(self, message: dict):
         if self._event_loop and self._event_loop.is_running():
@@ -126,7 +137,7 @@ async def lifespan(app: FastAPI):
     def on_audio_level(level):
         ws_manager.broadcast_sync({
             "type": "audio_level",
-            "level": level,
+            "level": float(level),
         })
 
     controller.callbacks.on_subtitle_update = on_subtitle_update
@@ -333,3 +344,23 @@ async def websocket_endpoint(ws: WebSocket):
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
         ws_manager.disconnect(client_id)
+
+
+FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
+
+if FRONTEND_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
+
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import FileResponse as StarletteFileResponse
+
+    class SPA_Fallback(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            if response.status_code == 404 and not request.url.path.startswith("/api"):
+                index = FRONTEND_DIR / "index.html"
+                if index.exists():
+                    return StarletteFileResponse(str(index))
+            return response
+
+    app.add_middleware(SPA_Fallback)

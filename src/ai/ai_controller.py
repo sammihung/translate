@@ -68,13 +68,17 @@ class AIController:
     ) -> Tuple[str, str, Optional[str]]:
         try:
             if not self.engines_ready:
+                logger.warning("process_audio called but engines not ready")
                 return "", "", None
-            
+
             text: str = ""
             if self.asr_engine:
                 try:
                     lang_param: Optional[str] = None if src_lang == "auto" else src_lang
+                    logger.info(f"ASR call: samples={len(audio)}, rms={float(np.sqrt(np.mean(audio ** 2))):.4f}, lang={lang_param}")
                     text = self.asr_engine.process_audio(audio, language=lang_param)
+                    if not text:
+                        logger.info("ASR returned empty text (audio may be too short or silent)")
                 except Exception as e:
                     logger.error(f"ASR 處理錯誤：{e}", exc_info=True)
             

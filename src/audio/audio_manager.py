@@ -186,22 +186,106 @@ class AudioManager:
         loopback_channels = int(loopback['maxInputChannels'])
         loopback_index = loopback['index']
 
-        try:
+        open_attempts = [
+            {"rate": loopback_rate, "channels": loopback_channels, "frames": 4096},
+            {"rate": loopback_rate, "channels": loopback_channels, "frames": 2048},
+            {"rate": loopback_rate, "channels": 1, "frames": 4096},
+            {"rate": 48000, "channels": 2, "frames": 4096},
+            {"rate": 44100, "channels": 2, "frames": 4096},
+        ]
+
+        def _open_loopback_stream(rate, channels, frames):
             self.stream = self.p.open(
                 format=pyaudio.paInt16,
-                channels=loopback_channels,
-                rate=loopback_rate,
+                channels=channels,
+                rate=rate,
                 input=True,
                 input_device_index=loopback_index,
-                frames_per_buffer=1024
+                frames_per_buffer=frames,
+                start=False,
             )
-            logger.info(f"System loopback stream opened: {loopback_rate}Hz, {loopback_channels}ch, device={loopback_index}")
+            self.stream.start_stream()
+            logger.info(
+                f"System loopback stream opened+started: {rate}Hz, {channels}ch, "
+                f"frames={frames}, device={loopback_index}, "
+                f"is_active={self.stream.is_active()}"
+            )
+
+        def _close_only():
+            try:
+                if self.stream is not None:
+                    self.stream.close()
+            except Exception:
+                pass
+            self.stream = None
+
+        try:
+            last_err: Optional[Exception] = None
+            stream_opened = False
+            for attempt in open_attempts:
+                try:
+                    _open_loopback_stream(attempt["rate"], attempt["channels"], attempt["frames"])
+                    loopback_rate = attempt["rate"]
+                    loopback_channels = attempt["channels"]
+                    stream_opened = True
+                    break
+                except Exception as e:
+                    last_err = e
+                    logger.warning(
+                        f"Loopback open attempt failed "
+                        f"({attempt['rate']}Hz/{attempt['channels']}ch/{attempt['frames']}f): {e}"
+                    )
+                    _close_only()
+
+            if not stream_opened:
+                raise last_err if last_err else RuntimeError("Failed to open loopback stream")
 
             from librosa import resample as librosa_resample
             target_rate = 16000
 
+            consecutive_failures = 0
+            warmup_chunks_left = 3
             while self.is_recording:
-                data = self.stream.read(1024, exception_on_overflow=False)
+                try:
+                    data = self.stream.read(loopback_rate // 100, exception_on_overflow=False)
+                    if consecutive_failures:
+                        logger.info(f"Loopback stream recovered after {consecutive_failures} failures")
+                    consecutive_failures = 0
+                except OSError as e:
+                    errno = getattr(e, 'errno', None)
+                    if errno in (-9999, -9988, -9983) and self.is_recording:
+                        consecutive_failures += 1
+                        logger.warning(
+                            f"WASAPI loopback read error (errno={errno}), "
+                            f"failure {consecutive_failures}/10, will reopen stream..."
+                        )
+                        _close_only()
+                        if consecutive_failures > 10:
+                            logger.error("Loopback failed too many times, giving up")
+                            raise
+                        time.sleep(0.3)
+                        opened = False
+                        for attempt in open_attempts:
+                            try:
+                                _open_loopback_stream(attempt["rate"], attempt["channels"], attempt["frames"])
+                                loopback_rate = attempt["rate"]
+                                loopback_channels = attempt["channels"]
+                                opened = True
+                                break
+                            except Exception as e2:
+                                logger.warning(f"Reopen attempt failed: {e2}")
+                                _close_only()
+                        if not opened:
+                            logger.error("Could not reopen loopback stream, giving up")
+                            raise
+                        warmup_chunks_left = 3
+                        continue
+                    raise
+
+                if warmup_chunks_left > 0:
+                    warmup_chunks_left -= 1
+                    continue
+
                 audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
 
                 if loopback_channels > 1:
@@ -234,15 +318,15 @@ class AudioManager:
                 return
             self._last_level_time = now
             
-            rms = np.sqrt(np.mean(audio_np ** 2))
-            peak = np.max(np.abs(audio_np))
-            db = 20 * np.log10(rms + 1e-10)
-            level = min(1.0, max(0.0, (db + 80) / 80))
-            logger.info(f"[AUDIO_LEVEL] RMS={rms:.6f}, peak={peak:.6f}, dB={db:.1f}, level={level:.3f}")
+            rms = float(np.sqrt(np.mean(audio_np ** 2)))
+            peak = float(np.max(np.abs(audio_np)))
+            db = float(20 * np.log10(rms + 1e-10))
+            level = float(min(1.0, max(0.0, (db + 80) / 80)))
+            logger.debug(f"[AUDIO_LEVEL] RMS={rms:.6f}, peak={peak:.6f}, dB={db:.1f}, level={level:.3f}")
             if self.on_audio_level:
                 self.on_audio_level(level)
 
-    def _close_stream(self):
+    def _close_stream(self, terminate_pyaudio=False):
         try:
             with self._stream_lock:
                 if self.stream is not None:
@@ -255,7 +339,7 @@ class AudioManager:
                     finally:
                         self.stream = None
 
-                if self.p is not None:
+                if terminate_pyaudio and self.p is not None:
                     try:
                         self.p.terminate()
                     except Exception:
@@ -270,9 +354,10 @@ class AudioManager:
         logger.info("Stopping recording...")
         self.is_recording = False
         time.sleep(0.3)
+        self._close_stream(terminate_pyaudio=False)
 
     def cleanup(self):
         logger.info("Cleaning audio resources...")
         self.is_recording = False
-        self._close_stream()
+        self._close_stream(terminate_pyaudio=True)
         logger.info("Audio resources cleaned")

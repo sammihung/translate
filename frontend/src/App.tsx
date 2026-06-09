@@ -78,7 +78,6 @@ function App() {
 
     on('audio_level', (data) => {
       const level = (data.level as number) || 0
-      console.log('[App] audio_level received:', level)
       setAudioLevel(level)
     })
 
@@ -94,8 +93,6 @@ function App() {
   const handleRecordClick = useCallback((deviceIndex: number | null) => {
     if (isRecording) {
       send({ type: 'stop_recording' })
-      setIsRecording(false)
-      setAudioLevel(0)
     } else {
       send({
         type: 'start_recording',
@@ -202,6 +199,24 @@ function App() {
           />
         )}
       </main>
+
+      {floatingActive && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+          <div className="bg-black/80 backdrop-blur-md rounded-2xl px-6 py-3 max-w-[80vw] shadow-2xl pointer-events-auto">
+            {bubbles.length === 0 ? (
+              <p className="text-white/50 text-sm text-center">等待語音輸入...</p>
+            ) : (
+              bubbles.slice(-3).map((b) => (
+                <div key={b.id} className="mb-1 last:mb-0">
+                  <span className="text-white/90 font-bold text-base font-chat">
+                    {b.translated}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

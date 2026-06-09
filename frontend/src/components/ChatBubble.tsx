@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 interface BubbleData {
   id: string
   speaker: string
@@ -50,8 +52,15 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({ bubbles }: ChatAreaProps) {
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [bubbles])
+
   return (
-    <div className="flex-1 overflow-y-auto px-1">
+    <div ref={containerRef} className="flex-1 overflow-y-auto px-1">
       {bubbles.length === 0 && (
         <div className="h-full flex items-center justify-center text-text-dim">
           <p className="text-sm">等待語音輸入...</p>
@@ -60,6 +69,7 @@ export function ChatArea({ bubbles }: ChatAreaProps) {
       {bubbles.map((bubble) => (
         <ChatBubble key={bubble.id} bubble={bubble} />
       ))}
+      <div ref={bottomRef} />
     </div>
   )
 }

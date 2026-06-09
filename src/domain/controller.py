@@ -302,9 +302,10 @@ class AppController:
                     
                     try:
                         audio_rms = np.sqrt(np.mean(audio_data ** 2)) if len(audio_data) > 0 else 0.0
-                        if audio_rms < 0.005:
-                            logger.debug(f"Skipping silent chunk: RMS={audio_rms:.4f}")
+                        if audio_rms < 0.001:
+                            logger.info(f"Skipping silent chunk: RMS={audio_rms:.4f}, samples={len(audio_data)}")
                             continue
+                        logger.info(f"Processing chunk: samples={len(audio_data)}, rms={audio_rms:.4f}, queue_remaining={self.audio_queue.qsize()}")
 
                         src_lang_param = getattr(self, 'src_lang', 'auto')
                         original, _, speaker = self.ai_ctrl.process_audio(

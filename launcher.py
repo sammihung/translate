@@ -27,7 +27,6 @@ logger = setup_logging(log_dir="logs", log_level=log_level, console_output=True,
 BACKEND_PORT = 8000
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 800
-FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 
 
 def start_backend():
@@ -53,12 +52,7 @@ def main():
 
     api_instance = Api()
 
-    index_path = FRONTEND_DIR / "index.html"
-    if index_path.exists():
-        url = str(index_path)
-    else:
-        url = f"http://localhost:3000"
-        logger.warning(f"Frontend dist not found at {FRONTEND_DIR}, falling back to dev server at {url}")
+    url = f"http://127.0.0.1:{BACKEND_PORT}"
 
     window = webview.create_window(
         title="QwenASR Pro",
@@ -72,7 +66,7 @@ def main():
     )
 
     logger.info("Launching pywebview window...")
-    webview.start(debug=False)
+    webview.start(debug=True)
     logger.info("Application closed")
 
 
